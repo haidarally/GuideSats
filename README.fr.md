@@ -6,7 +6,7 @@ Si une alerte cyclone GDACS pour Maurice arrive avant l'excursion, la facture es
 
 [English version: README.md](README.md) · Réalisé pour le Dakar Bitcoin Hack 2026 · Licence MIT
 
-> **Ce qui est réel, ce qui est simulé.** La démo tourne sur un Lightning **SIMULÉ** : un registre en mémoire avec factures « hold », marqué SIMULÉ sur chaque écran. Il écrit de vraies factures BOLT11, mais avec le préfixe regtest et sans signature : aucun portefeuille sur un vrai réseau ne pourrait les payer. L'adaptateur **Nostr Wallet Connect** pour de vrais portefeuilles est écrit et testé contre un faux client. Il **n'a pas encore été lancé** contre de vrais portefeuilles ; c'est le rôle de `npm run e2e:nwc`, qui demande deux portefeuilles de test (voir plus bas). Le décodage des factures, les contrôles, le mandat, l'agent et la règle cyclone sont le même code dans les deux cas.
+> **Ce qui est réel, ce qui est simulé.** La démo tourne sur un Lightning **SIMULÉ** : un registre en mémoire avec factures « hold », marqué SIMULÉ sur chaque écran. Il écrit de vraies factures BOLT11, mais avec le préfixe regtest et sans signature : aucun portefeuille sur un vrai réseau ne pourrait les payer. L'adaptateur **Nostr Wallet Connect** pour de vrais portefeuilles est écrit et testé contre un faux client. Il **n'a pas encore été lancé** contre de vrais portefeuilles ; c'est le rôle de `npm run e2e:nwc`, qui demande deux portefeuilles de test (voir plus bas). Le décodage des factures, les contrôles, le mandat, l'agent et la règle cyclone sont le même code dans les deux cas, à une différence près. Avec de vrais portefeuilles, le bénéficiaire est la clé retrouvée à partir de la signature de la facture. Les factures simulées ne sont pas signées : leur bénéficiaire vient de l'étiquette `n`, acceptée uniquement sur regtest.
 
 ## Lancer (une commande)
 
@@ -24,8 +24,13 @@ Le parcours principal prend environ 30 secondes :
 2. **Approuver le mandat**. Votre navigateur crée un secret P, le garde, et n'envoie que H = SHA-256(P).
 3. **Demander à l'agent de bloquer les sats**. La console de l'agent montre chaque appel d'outil. Les sats passent dans une facture « hold ».
 4. La carte affiche le **code de rendez-vous** (P) en QR code et en texte.
-5. Onglet **Guide** : scannez le QR (sur les téléphones dont le navigateur a `BarcodeDetector`, comme Chrome sur Android) ou collez le code, puis appuyez sur **Encaisser**. Le guide reçoit 21 000 sats.
-6. Onglet **Agent** : **Déclencher une alerte cyclone GDACS** (un rejeu de la vraie fiche BELAL-24). Toute réservation bloquée est remboursée automatiquement. **Avancer de 13 h** montre une facture qui expire et rembourse.
+5. Onglet **Guide** : collez le code, puis appuyez sur **Encaisser**. Le guide reçoit 21 000 sats.
+   - Dans cette démo locale, les deux écrans sont sur la même machine, d'où le copier-coller.
+   - Sur un téléphone dont le navigateur a `BarcodeDetector` (Chrome sur Android), l'écran du guide propose aussi **Scanner le QR**. Ce scan et le QR n'ont pas encore été testés avec une vraie caméra.
+6. Onglet **Agent** :
+   - **Pousser l'agent à trop dépenser** utilise les outils de l'agent contre une réservation approuvée : une facture trois fois au-dessus du plafond, le bon montant vers un autre guide, `approve_mandate` et `raise_cap`. La console montre les quatre tentatives refusées.
+   - **Déclencher une alerte cyclone GDACS** (un rejeu de la vraie fiche BELAL-24) rembourse automatiquement toute réservation bloquée.
+   - **Avancer de 13 h** montre une facture qui expire et rembourse.
 
 Vous pouvez aussi écrire une demande à l'agent, en français ou en anglais : *« je veux voir la cascade de Chamarel »*.
 
@@ -40,7 +45,7 @@ L'agent ne paie que la facture que l'appli a elle-même demandée au portefeuill
 ## Tester
 
 ```bash
-npm run check        # typecheck + 122 tests (unitaires, propriété, API) + les 4 scénarios de bout en bout ; hors ligne, sans clé
+npm run check        # typecheck + 135 tests (unitaires, propriété, API) + les 4 scénarios de bout en bout ; hors ligne, sans clé
 npm run e2e:sim      # les quatre scénarios de démo, sous forme de rapport
 npm run test:e2e     # Playwright à 360 px (EN) et 412 px (FR) ; une fois avant : npx playwright install chromium
 ```
@@ -64,7 +69,7 @@ De plus en plus de voyageurs préparent leur voyage avec des agents IA. Aujourd'
 - prendre un acompte par virement, ce qui est lent, coûteux pour les cartes étrangères et sans garantie de remboursement ;
 - ne rien prendre, et perdre la journée si le client ne vient pas.
 
-Maurice reçoit environ 1,3 million d'arrivées touristiques par an, et la saison cyclonique va de novembre à avril.
+Maurice a accueilli environ 1,38 million de touristes en 2024 (chiffres de Statistics Mauritius repris par la presse). La saison cyclonique du sud-ouest de l'océan Indien va de mi-novembre à avril, et jusqu'à mi-mai pour Maurice.
 
 **Ce qui change :**
 - Le guide reçoit un engagement avant le jour J, en sats, sur son propre portefeuille, sans frais de carte ni plateforme qui garde l'argent.
@@ -89,7 +94,39 @@ Maurice reçoit environ 1,3 million d'arrivées touristiques par an, et la saiso
   - un délai expiré rembourse.
 - **Agent** : un planificateur à règles, donc sans clé de LLM. Un planificateur LLM utiliserait les mêmes outils, sans rien de plus.
 
+```mermaid
+flowchart LR
+    T[Téléphone du voyageur<br/>portefeuille PWA] -- approuve le mandat + H --> S[Serveur<br/>mandat + contrôles]
+    A[Agent<br/>planificateur à règles] -- outils seulement --> S
+    S -- make_hold_invoice --> G[Portefeuille du guide<br/>NWC]
+    S -- pay_invoice<br/>après tous les contrôles --> W[Portefeuille du voyageur<br/>NWC]
+    F[Flux GDACS] -- règle cyclone --> S
+    T -. code de rendez-vous P .-> G
+```
+
 Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [SECURITY.md](SECURITY.md).
+
+## Sécurité dès la conception (en bref)
+
+- **Modèle de menaces.** 15 menaces, chacune reliée à sa parade et au test qui la couvre ([SECURITY.md](SECURITY.md)).
+- **Moindre privilège.**
+  - La connexion NWC du voyageur n'a besoin que de `pay_invoice` (plus `get_budget` et `get_balance`).
+  - Celle du guide n'a besoin que des méthodes « hold » et de `lookup_invoice`.
+- **Chaînes de connexion NWC.** Elles ne sont lues que dans des variables d'environnement. `.env` est ignoré par git et jamais journalisé.
+- **Le secret P.** Il est créé et gardé sur le téléphone du voyageur. L'agent ne voit jamais P ni aucun secret de portefeuille.
+- **Journaux et piste d'audit.** Ils passent par un filtre de caviardage, vérifié par un test d'instantané. Aucune donnée personnelle n'est collectée.
+- **Serveur local.**
+  - Il n'écoute que sur 127.0.0.1 et vérifie l'en-tête Host.
+  - Il n'accepte que du JSON de sa propre origine, limite la taille des requêtes et valide chaque entrée.
+  - Il applique une CSP stricte.
+- **Bibliothèques éprouvées.** `light-bolt11-decoder`, `@getalby/sdk`, `@noble/curves`. Versions épinglées, `npm audit` propre.
+
+## Faible débit, téléphones milieu de gamme
+
+- Une PWA Preact de 41 Ko minifiés (environ 16 Ko gzip), sans police web.
+- Conçue d'abord pour 360 px, avec des zones tactiles de 44 px.
+- Mises à jour en direct par Server-Sent Events.
+- Interface en français et en anglais.
 
 ## Contraintes (honnêtes)
 

@@ -6,7 +6,7 @@ If a GDACS cyclone alert for Mauritius comes before the tour, the hold is cancel
 
 [Version française : README.fr.md](README.fr.md) · Built for the Dakar Bitcoin Hack 2026 · MIT license
 
-> **What is real and what is simulated.** The demo runs on a **SIMULATED** Lightning backend: an in-process ledger with hold invoices, labelled SIMULATED on every screen. It writes real BOLT11 invoices, but on the regtest prefix and with no signature, so no wallet on a real network could pay one. The **Nostr Wallet Connect** adapter for real wallets is written and unit-tested against a fake client. It has **not yet been run** against real wallets; that is `npm run e2e:nwc`, which needs two test wallets (see below). The invoice decoding, the checks, the mandate, the agent and the cyclone rule are the same code on both paths.
+> **What is real and what is simulated.** The demo runs on a **SIMULATED** Lightning backend: an in-process ledger with hold invoices, labelled SIMULATED on every screen. It writes real BOLT11 invoices, but on the regtest prefix and with no signature, so no wallet on a real network could pay one. The **Nostr Wallet Connect** adapter for real wallets is written and unit-tested against a fake client. It has **not yet been run** against real wallets; that is `npm run e2e:nwc`, which needs two test wallets (see below). The invoice decoding, the checks, the mandate, the agent and the cyclone rule are the same code on both paths, with one difference. On real wallets the payee is the key recovered from the invoice signature (tested on the BOLT11 spec vector). Simulated invoices are unsigned, so there the payee comes from the invoice's explicit `n` tag, which the checker accepts only on regtest.
 
 ## Run it (one command)
 
@@ -24,8 +24,11 @@ The happy path takes about 30 seconds:
 2. **Approve mandate**. Your browser makes a secret P, keeps it, and sends only H = SHA-256(P).
 3. **Ask the agent to lock the sats**. The agent console shows each tool call. The sats move into a hold invoice.
 4. The card shows the **meeting code** (P) as a QR code and as text.
-5. **Guide** tab: scan the QR (on phones whose browser has `BarcodeDetector`, such as Chrome on Android) or paste the code, then press **Settle**. The guide is paid 21 000 sats.
-6. **Agent** tab: **Trigger GDACS cyclone alert** (a replay of the real BELAL-24 record). Any locked booking is refunded automatically. **Skip ahead 13 h** shows a hold timing out and refunding.
+5. **Guide** tab: paste the code, then press **Settle**. The guide is paid 21 000 sats. In this local demo both screens are on one machine, so you paste. On a phone whose browser has `BarcodeDetector` (such as Chrome on Android), the guide's screen also offers **Scan QR**. That scan path and the QR itself have not yet been tested with a real camera.
+6. **Agent** tab:
+   - **Push the agent to overspend** drives the agent's own tools against an approved booking. It sends a 3× over-cap invoice, the right amount to another guide, `approve_mandate` and `raise_cap`. The console shows all four refused.
+   - **Trigger GDACS cyclone alert** (a replay of the real BELAL-24 record) refunds any locked booking automatically.
+   - **Skip ahead 13 h** shows a hold timing out and refunding.
 
 You can also type a request for the agent, in English or French: *"book the lagoon boat"* or *"je veux voir la cascade de Chamarel"*.
 
@@ -34,10 +37,10 @@ You can also type a request for the agent, in English or French: *"book the lago
 ## Test it
 
 ```bash
-npm run check        # typecheck + 122 unit/property/API tests + the 4 end-to-end scenarios; offline, no keys
+npm run check        # typecheck + 135 unit/property/API tests + the 4 end-to-end scenarios; offline, no keys
 npm test             # unit, property and API tests only (Vitest)
 npm run e2e:sim      # the four demo scenarios (settle, cyclone refund, refusals, plan B), printed as a report
-npm run test:e2e     # Playwright smoke at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once
+npm run test:e2e     # Playwright: 4 flows at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once
 ```
 
 Key tests:
@@ -56,7 +59,7 @@ Key tests:
 
 ## The problem, the user, the reach
 
-**Primary user: the small independent tour guide** in Mauritius. Think of a hiking guide at Le Morne, a boat operator at Blue Bay, or a family guiding at Chamarel. More and more travellers plan trips with AI agents. Today these guides either take a deposit by bank transfer (slow, expensive for foreign cards, and nothing guarantees a refund) or take no deposit and lose the day when the guest does not come. Mauritius receives roughly 1.3 million tourist arrivals a year, and the cyclone season runs from November to April.
+**Primary user: the small independent tour guide** in Mauritius. Think of a hiking guide at Le Morne, a boat operator at Blue Bay, or a family guiding at Chamarel. More and more travellers plan trips with AI agents. Today these guides either take a deposit by bank transfer (slow, expensive for foreign cards, and nothing guarantees a refund) or take no deposit and lose the day when the guest does not come. Mauritius received about 1.38 million tourist arrivals in 2024 (as reported from Statistics Mauritius figures). The South-West Indian Ocean cyclone season runs from mid-November to April, and to mid-May for Mauritius.
 
 **What changes:**
 
