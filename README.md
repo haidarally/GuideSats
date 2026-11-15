@@ -29,18 +29,27 @@ The happy path takes about 30 seconds:
 
 You can also type a request for the agent, in English or French: *"book the lagoon boat"* or *"je veux voir la cascade de Chamarel"*.
 
+**Plan B (wallets without hold invoices).** Choose **Pay after the tour** on a tour card and approve the mandate (no secret is needed). Use **Skip ahead 13 h**, then **The tour happened: confirm**, then **Ask the agent to pay the guide**. The agent pays only an invoice that the app itself asked the guide's wallet for, only after you confirm, and only inside the cap and the window.
+
 ## Test it
 
 ```bash
-npm run check        # typecheck + 113 unit/property/API tests + the 3 end-to-end scenarios; offline, no keys
+npm run check        # typecheck + 122 unit/property/API tests + the 4 end-to-end scenarios; offline, no keys
 npm test             # unit, property and API tests only (Vitest)
-npm run e2e:sim      # the three demo scenarios, printed as a report
+npm run e2e:sim      # the four demo scenarios (settle, cyclone refund, refusals, plan B), printed as a report
 npm run test:e2e     # Playwright smoke at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once
 ```
 
 Key tests:
 
-- `tests/agent/property.test.ts`: **fast-check** generates random sequences of agent tool calls, including forged, replayed, cross-booking and garbage invoices, clock jumps and cyclone flips. It then checks **on the ledger** that the traveller never paid above a cap, never paid a payee outside a mandate, never paid one mandate twice, and never paid an unapproved booking. A mutation check (switching off the invoice check) makes it fail at once.
+- `tests/agent/property.test.ts`: **fast-check** generates 500 random sequences of up to 40 agent tool calls. They include forged, replayed, swapped, cross-booking and garbage invoices, clock jumps, cyclone flips and a plan-B booking. It then checks **on the ledger** that the traveller never paid:
+  - above a cap;
+  - a payee outside a mandate;
+  - one mandate twice;
+  - an unapproved booking;
+  - outside the mandate's time window.
+
+  It is mutation-checked: switching off the invoice check, or the mandate check, makes it fail.
 - `tests/ln/invoiceCheck.test.ts`: checks run against the **BOLT11 spec test vector**. The payee is recovered from the signature with `@noble/curves`. The suite refuses a wrong network, amount or hash, an expired invoice and a wrong payee.
 - `tests/domain/cyclone.test.ts`: the cyclone rule on **recorded GDACS data**: BELAL-24 (Orange, Mauritius) cancels. FREDDY-23, GARANCE-25, HONDE-25, GAMANE-24 and FILIPO-24 do not.
 - `tests/log/redact.test.ts`: a **snapshot** showing that no preimage, NWC string, name, email or phone number survives in logs.
@@ -79,7 +88,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 
 ## Security by design (short)
 
-- A threat model with 14 threats, each mapped to its mitigation and the test that covers it ([SECURITY.md](SECURITY.md)).
+- A threat model with 15 threats, each mapped to its mitigation and the test that covers it ([SECURITY.md](SECURITY.md)).
 - Least privilege. The traveller's NWC connection needs only `pay_invoice` (plus `get_budget` and `get_balance`). The guide's needs only the hold-invoice methods and `lookup_invoice`.
 - NWC connection strings are read only from env vars. `.env` is git-ignored and never logged. The real SDK is loaded only on the opt-in real path.
 - The preimage P is made and kept on the traveller's phone. The agent never sees P or any wallet secret.
@@ -97,7 +106,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 
 ## Constraints (honest)
 
-- **Hold invoices are young.** NWC-03 is a draft and few wallets support it. If a wallet lacks it, the plan B is pay-on-completion: the state is already in the state machine, and its payment path is the next iteration.
+- **Hold invoices are young.** NWC-03 is a draft and few wallets support it. For wallets without it, plan B (pay on completion, core NIP-47 only) is built in. No money moves before the tour, and a cyclone means nothing is paid. It gives the guide less certainty than a hold.
 - **Hold time is limited** by the Lightning HTLC timeout. So the agent locks the sats close to the tour (from 12 h before; to be measured on the first real run), and at booking only the approved mandate is recorded.
 - **Wallet budgets (NWC-13) are optional.** When a wallet offers no budget, the app's mandate is the only cap.
 - **Test wallets on one shared node** sign invoices with the same node key, which weakens the payee check between them. Real guides on their own wallets do not have this problem.
@@ -116,10 +125,9 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 
 1. The **first real NWC run** on two test wallets. It checks the hold-method gate, records `get_budget` and the real `settle_deadline`, then does one lock and settle and one lock, cancel and refund.
 2. A **QR code** for the meeting code, scanned by the guide's phone camera.
-3. **Plan B** pay-on-completion path for wallets without hold invoices.
-4. **Wallet-enforced budgets** (NWC-13) on a self-hosted wallet, so the cap is enforced twice.
-5. A second cyclone feed: the class warnings of the **Mauritius Meteorological Services**.
-6. A **Kreol Morisien** user interface, and an optional LLM planner behind the same tools.
+3. **Wallet-enforced budgets** (NWC-13) on a self-hosted wallet, so the cap is enforced twice.
+4. A second cyclone feed: the class warnings of the **Mauritius Meteorological Services**.
+5. A **Kreol Morisien** user interface, and an optional LLM planner behind the same tools.
 
 ## Still needed before submission (team steps)
 

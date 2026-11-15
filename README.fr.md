@@ -29,11 +29,19 @@ Le parcours principal prend environ 30 secondes :
 
 Vous pouvez aussi écrire une demande à l'agent, en français ou en anglais : *« je veux voir la cascade de Chamarel »*.
 
+**Plan B (portefeuilles sans facture « hold »).**
+1. Choisissez **Payer après l'excursion** et approuvez le mandat (pas de secret).
+2. Faites **Avancer de 13 h**.
+3. Appuyez sur **L'excursion a eu lieu : confirmer**.
+4. Appuyez sur **Demander à l'agent de payer le guide**.
+
+L'agent ne paie que la facture que l'appli a elle-même demandée au portefeuille du guide, après votre confirmation, dans le plafond et la fenêtre.
+
 ## Tester
 
 ```bash
-npm run check        # typecheck + 113 tests (unitaires, propriété, API) + les 3 scénarios de bout en bout ; hors ligne, sans clé
-npm run e2e:sim      # les trois scénarios de démo, sous forme de rapport
+npm run check        # typecheck + 122 tests (unitaires, propriété, API) + les 4 scénarios de bout en bout ; hors ligne, sans clé
+npm run e2e:sim      # les quatre scénarios de démo, sous forme de rapport
 npm run test:e2e     # Playwright à 360 px (EN) et 412 px (FR) ; une fois avant : npx playwright install chromium
 ```
 
@@ -85,7 +93,7 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 
 ## Contraintes (honnêtes)
 
-- **Les factures « hold » sont récentes.** NWC-03 est un brouillon et peu de portefeuilles le prennent en charge. Le plan B est le paiement à la fin de l'excursion : l'état existe déjà, et le chemin de paiement est la prochaine étape.
+- **Les factures « hold » sont récentes.** NWC-03 est un brouillon et peu de portefeuilles le prennent en charge. Le plan B (paiement après l'excursion, NIP-47 de base) est intégré : rien ne bouge avant l'excursion, et en cas de cyclone rien n'est payé.
 - **La durée d'un « hold » est limitée.** L'agent bloque donc les sats peu avant l'excursion : à partir de 12 h avant, durée à mesurer lors du premier vrai essai.
 - **Les budgets côté portefeuille (NWC-13) sont optionnels.** Sans budget, le mandat de l'appli reste le seul plafond.
 - **Des portefeuilles de test sur un même nœud** signent avec la même clé, ce qui affaiblit le contrôle du bénéficiaire entre eux.
@@ -103,10 +111,9 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 
 1. Premier vrai essai NWC sur deux portefeuilles de test.
 2. Un QR code pour le code de rendez-vous.
-3. Le plan B (paiement à la fin).
-4. Des budgets imposés par le portefeuille.
-5. Les alertes de la Météo mauricienne (MMS) comme seconde source.
-6. Une interface en kreol morisien.
+3. Des budgets imposés par le portefeuille.
+4. Les alertes de la Météo mauricienne (MMS) comme seconde source.
+5. Une interface en kreol morisien.
 
 ## Crédits
 

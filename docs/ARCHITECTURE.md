@@ -82,13 +82,22 @@ stateDiagram-v2
 
 All in one function, `payWithinMandate` (`src/app/payments.ts`), in this order:
 
-1. The booking exists, is in hold mode, and is `mandated`.
-2. Its mandate exists and is approved (H is bound).
+1. The booking exists and is `mandated`. In plan B, the traveller must also have confirmed that the tour happened.
+2. Its mandate exists and is approved. In hold mode the expected hash is the H the traveller bound. In plan B it is the hash of the invoice the app itself asked the guide's wallet for.
 3. The cyclone rule says no alert for the tour.
 4. `checkInvoice`: network prefix, exact amount, payment hash = H, not expiring within 60 s, payee = key recovered from the signature (or the explicit `n` tag on regtest SIMULATED invoices only).
 5. `checkSpend`: cap, payee, hash, window, status.
 6. Atomic compare-and-set of the mandate from `approved` to `consuming`.
 7. Pay, then wait until the guide's wallet reports the hold as `accepted`. Definite failure re-arms the mandate; an unknown outcome leaves it reserved.
+
+## Plan B: pay on completion
+
+For wallets without hold invoices (core NIP-47 only):
+
+- The booking's mode is `on_completion`.
+- The mandate has no hash (`requireHash: false`). Its window opens at the tour start and closes 48 h after the end.
+- After the traveller confirms the tour happened, the agent's `request_invoice` asks the guide's own wallet for a regular invoice (`make_invoice`), and `pay_invoice` pays only that invoice.
+- The same cap, payee, single-use and cyclone checks apply.
 
 ## Two backends, one interface
 

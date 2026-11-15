@@ -42,6 +42,7 @@ Status: hackathon prototype. The money path is tested on a SIMULATED Lightning b
 | T12 | Malformed input | Every id matches `^[a-z0-9_]{1,40}$`, every hash or preimage is 32-byte hex, invoices are capped at 4 KB and fully decoded before use; errors never echo internals | `server/app.ts`, `ln/invoiceCheck.ts` | API tests |
 | T13 | Simulator money confused with real money | SIMULATED banner on every screen and in the API; simulator invoices use the regtest prefix and a zero signature, so no real wallet can pay one; the `n`-tag payee shortcut is accepted only on regtest | `ln/sim.ts`, `ln/invoiceCheck.ts` | invoice tests |
 | T14 | Supply chain | Exact version pins, lockfile from the public npm registry only, `npm install --ignore-scripts`, versions at least about two weeks old, `npm audit` clean at build time | `package.json`, `.npmrc` | - |
+| T15 | Plan B: paying for a tour that did not happen, or a swapped invoice | The agent may pay only after the traveller confirms the tour, only inside the post-tour window, and only the invoice the app itself asked the guide's wallet for (its hash is pinned on the booking) | `app/service.ts`, `app/payments.ts` | plan B service and API tests, property test |
 
 ## Least privilege for real wallets
 
