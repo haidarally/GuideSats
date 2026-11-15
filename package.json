@@ -15,7 +15,8 @@
     "demo": "node scripts/build-web.mjs && tsx src/server/main.ts",
     "e2e:sim": "tsx scripts/e2e-sim.ts",
     "e2e:nwc": "tsx scripts/e2e-nwc.ts",
-    "check": "npm run typecheck && npm test && npm run e2e:sim"
+    "check": "npm run typecheck && npm test && npm run e2e:sim",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@getalby/sdk": "9.0.0",
@@ -28,6 +29,7 @@
     "preact": "11.1.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/node": "22.20.5",
     "esbuild": "0.28.2",
     "fast-check": "4.10.2",

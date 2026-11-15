@@ -1,0 +1,47 @@
+// Playwright smoke test at 360 px (EN) and 412 px (FR): book, approve, agent locks, guide settles.
+import { test, expect } from "@playwright/test";
+
+test("book -> approve -> agent locks -> guide settles", async ({ page, request }, info) => {
+  await request.post("/api/demo/reset", { data: {} });
+  await page.goto("/");
+  const fr = info.project.name.endsWith("fr");
+  await expect(page.getByTestId("sim-banner")).toContainText(fr ? "SIMULÉ" : "SIMULATED");
+  await expect(page.getByTestId("traveller-balance")).toContainText("120 000");
+
+  await page.getByTestId("book-tour_lemorne").click();
+  await page.getByTestId("approve").click();
+  await page.getByTestId("ask-agent").click();
+  const code = page.getByTestId("meeting-code");
+  await expect(code).toBeVisible();
+  await expect(page.getByTestId("traveller-balance")).toContainText("99 000");
+  await page.screenshot({ path: `test-results/${info.project.name}-traveller.png`, fullPage: true });
+  const p = (await code.textContent())!.replace(/\s+/g, "");
+
+  await page.getByTestId("tab-guide").click();
+  await page.getByTestId("guide-code").fill(p);
+  await page.getByTestId("settle").click();
+  await expect(page.getByTestId("guide-balance")).toContainText("21 000");
+  await page.screenshot({ path: `test-results/${info.project.name}-guide.png`, fullPage: true });
+
+  await page.getByTestId("tab-agent").click();
+  await expect(page.getByTestId("agent-log")).toContainText("pay_invoice");
+  await page.screenshot({ path: `test-results/${info.project.name}-agent.png`, fullPage: true });
+
+  // No horizontal scroll on a small phone.
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("cyclone alert refunds a locked booking", async ({ page, request }) => {
+  await request.post("/api/demo/reset", { data: {} });
+  await page.goto("/");
+  await page.getByTestId("book-tour_lagoon").click();
+  await page.getByTestId("approve").click();
+  await page.getByTestId("ask-agent").click();
+  await expect(page.getByTestId("traveller-balance")).toContainText("108 000");
+  await page.getByTestId("tab-agent").click();
+  await page.getByTestId("cyclone").click();
+  await expect(page.getByTestId("cyclone-banner")).toContainText("BELAL");
+  await page.getByTestId("tab-traveller").click();
+  await expect(page.getByTestId("traveller-balance")).toContainText("120 000");
+});
