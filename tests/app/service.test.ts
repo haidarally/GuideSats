@@ -23,7 +23,7 @@ async function lockedBooking(w: Awaited<ReturnType<typeof world>>, tourId = "tou
   const { booking } = w.svc.proposeBooking(tourId);
   const { p, h } = pair();
   w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: h, at: w.clock() });
-  const inv = await w.svc.requestHoldInvoice(booking.id);
+  const inv = await w.svc.requestInvoice(booking.id);
   const r = await w.svc.payWithinMandate(booking.id, inv);
   return { booking, p, h, inv, r };
 }
@@ -64,7 +64,7 @@ describe("BookingService on the SIMULATED backend", () => {
     const w = await world(() => replayShifted(loadFixture("tc-2024-01-belal.json"), T0 - 6 * HOUR));
     const { booking } = w.svc.proposeBooking("tour_chamarel");
     w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: pair().h, at: w.clock() });
-    const inv = await w.svc.requestHoldInvoice(booking.id);
+    const inv = await w.svc.requestInvoice(booking.id);
     expect(await w.svc.payWithinMandate(booking.id, inv)).toEqual({ ok: false, reason: "cyclone_alert" });
     await w.svc.applyCycloneRule();
     expect(w.svc.booking(booking.id).state).toBe("skipped_cyclone");
@@ -85,7 +85,7 @@ describe("BookingService on the SIMULATED backend", () => {
     const w = await world();
     const { booking } = w.svc.proposeBooking("tour_lemorne");
     w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: pair().h, at: w.clock() });
-    const inv = await w.svc.requestHoldInvoice(booking.id);
+    const inv = await w.svc.requestInvoice(booking.id);
     const [a, b] = await Promise.all([w.svc.payWithinMandate(booking.id, inv), w.svc.payWithinMandate(booking.id, inv)]);
     expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
     expect(w.ledger.balance("traveller")).toBe(120_000 - 21_000);
@@ -94,7 +94,7 @@ describe("BookingService on the SIMULATED backend", () => {
   it("an unapproved booking cannot get an invoice or be paid", async () => {
     const w = await world();
     const { booking } = w.svc.proposeBooking("tour_lemorne");
-    await expect(w.svc.requestHoldInvoice(booking.id)).rejects.toThrow("not_mandated");
+    await expect(w.svc.requestInvoice(booking.id)).rejects.toThrow("not_mandated");
     expect(await w.svc.payWithinMandate(booking.id, "lnbcrt1x")).toMatchObject({ ok: false, reason: "booking_not_payable:proposed" });
   });
 
@@ -112,5 +112,45 @@ describe("BookingService on the SIMULATED backend", () => {
     const { booking, p } = await lockedBooking(w);
     await w.svc.settleWithPreimage(booking.id, p);
     expect(JSON.stringify(w.svc.audit())).not.toContain(p);
+  });
+
+  it("plan B: pay on completion, only after the traveller confirms the tour happened", async () => {
+    const w = await world();
+    const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
+    expect(() => w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: pair().h, at: w.clock() })).toThrow("plan_b_takes_no_hash");
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: w.clock() });
+    await expect(w.svc.requestInvoice(booking.id)).rejects.toThrow("not_confirmed_by_traveller");
+    expect(() => w.svc.confirmTourHappened(booking.id)).toThrow("tour_not_started");
+    w.tick(9 * HOUR); // the lagoon tour starts at +6 h and lasts 2 h
+    w.svc.confirmTourHappened(booking.id);
+    const inv = await w.svc.requestInvoice(booking.id);
+    const r = await w.svc.payWithinMandate(booking.id, inv);
+    expect(r).toEqual({ ok: true, state: "paid", amountSats: 12_000 });
+    expect(w.svc.booking(booking.id).state).toBe("paid");
+    expect(w.ledger.balance("guide_lagoon")).toBe(12_000);
+    expect(await w.svc.payWithinMandate(booking.id, inv)).toMatchObject({ ok: false });
+  });
+
+  it("plan B: an invoice the app did not ask the guide's wallet for is refused", async () => {
+    const w = await world();
+    const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: w.clock() });
+    w.tick(9 * HOUR);
+    w.svc.confirmTourHappened(booking.id);
+    await w.svc.requestInvoice(booking.id);
+    const other = await w.backend.receiver("guide_lagoon").makeInvoice({ amountSats: 12_000, description: "second", expirySecs: 600 });
+    expect(await w.svc.payWithinMandate(booking.id, other.invoice)).toEqual({ ok: false, reason: "invoice_wrong_hash" });
+    expect(w.ledger.balance("guide_lagoon")).toBe(0);
+  });
+
+  it("plan B: a cyclone means nothing is ever paid", async () => {
+    let feed: GdacsFeed = { features: [] };
+    const w = await world(() => feed);
+    const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: w.clock() });
+    feed = replayShifted(loadFixture("tc-2024-01-belal.json"), T0 - 6 * HOUR);
+    await w.svc.applyCycloneRule();
+    expect(w.svc.booking(booking.id).state).toBe("skipped_cyclone");
+    expect(w.ledger.balance("traveller")).toBe(120_000);
   });
 });

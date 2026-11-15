@@ -72,4 +72,18 @@ describe("SIMULATED backend", () => {
     advance(601_000);
     expect(await be.payer("rich").payInvoice(invoice)).toEqual({ status: "failed", error: "invoice is expired" });
   });
+
+  it("plan B: a regular invoice pays at once and cannot be settled or replayed", async () => {
+    const { be, ledger } = setup();
+    const g = be.receiver("guide");
+    const made = await g.makeInvoice({ amountSats: 12_000, description: "boat", expirySecs: 600 });
+    const total = ledger.totalSats();
+    const o = await be.payer("traveller").payInvoice(made.invoice);
+    expect(o.status).toBe("settled");
+    expect(ledger.balance("guide")).toBe(12_000);
+    expect(ledger.balance("traveller")).toBe(38_000);
+    expect(ledger.totalSats()).toBe(total);
+    expect(await be.payer("traveller").payInvoice(made.invoice)).toEqual({ status: "failed", error: "invoice is settled" });
+    if (o.status === "settled") await expect(g.settleHoldInvoice(o.preimage!)).rejects.toThrow();
+  });
 });

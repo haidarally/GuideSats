@@ -24,7 +24,7 @@ export interface PaymentDeps {
   onFinal?: (bookingId: string, outcome: PayOutcome) => void;
 }
 
-export type PayResult = { ok: true; state: "locked"; amountSats: number } | { ok: false; reason: string };
+export type PayResult = { ok: true; state: "locked" | "paid"; amountSats: number } | { ok: false; reason: string };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -53,9 +53,20 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
 
   const b = d.store.getBooking(bookingId);
   if (!b) return refuse("unknown_booking");
-  if (b.mode !== "hold" || b.state !== "mandated") return refuse(`booking_not_payable:${b.state}`);
+  if (b.state !== "mandated") return refuse(`booking_not_payable:${b.state}`);
   const m = d.store.mandateForBooking(b.id);
-  if (!m || m.paymentHash === null) return refuse("no_approved_mandate");
+  if (!m || m.status !== "approved") return refuse("no_approved_mandate");
+  // Hold mode: the hash is the H the traveller approved. Plan B: the hash of the invoice WE asked
+  // the guide's own wallet for, after the traveller confirmed the tour happened.
+  let expectedHash: string;
+  if (b.mode === "hold") {
+    if (m.paymentHash === null) return refuse("no_approved_mandate");
+    expectedHash = m.paymentHash;
+  } else {
+    if (!b.confirmedAt) return refuse("not_confirmed_by_traveller");
+    if (!b.paymentHash || b.invoice === null) return refuse("no_invoice_requested");
+    expectedHash = b.paymentHash;
+  }
 
   const cv = cycloneVerdict(d.feed(), { now, tourStart: b.tourStart, tourEnd: b.tourEnd });
   if (cv.cancel) return refuse("cyclone_alert");
@@ -63,7 +74,7 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
   const ci = checkInvoice(invoice, {
     network: d.backend.network,
     amountSats: b.priceSats,
-    paymentHash: m.paymentHash,
+    paymentHash: expectedHash,
     payeePubkey: m.payeePubkey,
     now,
     payeeProof: d.backend.payeeProof,
@@ -81,6 +92,27 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
 
   const payer = d.backend.payer(d.travellerWalletId);
   const receiver = d.backend.receiver(d.guideWalletOf(b));
+
+  if (b.mode === "on_completion") {
+    // Plan B: a regular payment; the wallet answers when it is done.
+    const o = await payer.payInvoice(invoice);
+    const at = d.clock();
+    if (o.status === "settled") {
+      d.store.casMandate(completeSpend(consuming), "consuming");
+      d.store.putBooking(applyEvent(d.store.getBooking(bookingId)!, "PAY_ON_COMPLETION", at));
+      d.store.audit(at, "paid_on_completion", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
+      d.onFinal?.(bookingId, o);
+      return { ok: true, state: "paid", amountSats: spend.amountSats };
+    }
+    if (o.status === "failed") {
+      d.store.casMandate(releaseSpend(consuming), "consuming");
+      d.store.audit(at, "pay_failed", { bookingId, error: o.error });
+      return { ok: false, reason: `payment_failed:${o.error}` };
+    }
+    d.store.audit(at, "pay_unknown", { bookingId });
+    return { ok: false, reason: "payment_unknown_needs_reconcile" };
+  }
+
   let outcome: PayOutcome | null = null;
   const final = payer.payInvoice(invoice).then((o) => {
     outcome = o;

@@ -64,6 +64,8 @@ export interface ReceiverWallet {
   getInfo(): Promise<WalletInfo>;
   getBalance(): Promise<number>;
   makeHoldInvoice(req: HoldInvoiceRequest): Promise<MadeInvoice>;
+  /** Plan B (wallets without hold invoices): a regular invoice; the wallet picks the hash. */
+  makeInvoice(req: { amountSats: number; description: string; expirySecs: number }): Promise<MadeInvoice>;
   settleHoldInvoice(preimage: string): Promise<void>;
   cancelHoldInvoice(paymentHash: string): Promise<void>;
   lookupInvoice(paymentHash: string): Promise<{ state: HoldState; amountSats: number; settleDeadline?: number }>;

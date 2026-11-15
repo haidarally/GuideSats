@@ -101,3 +101,24 @@ describe("single use", () => {
     expect(() => completeSpend(r)).toThrow();
   });
 });
+
+describe("plan B mandate (no hash: the guide's wallet picks it after the tour)", () => {
+  const d = draftMandate({ id: "m", bookingId: "b", capSats: 12_000, payeePubkey: PAYEE, notBefore: T0, notAfter: T0 + HOUR, requireHash: false });
+  it("approves with no hash, and refuses a hash", () => {
+    expect(approveMandate(d, { actor: "traveller", paymentHash: null, at: T0 }).status).toBe("approved");
+    expect(() => approveMandate(d, { actor: "traveller", paymentHash: H, at: T0 })).toThrow("does not bind");
+  });
+  it("a hold-mode mandate refuses a null hash", () => {
+    const h = draftMandate({ id: "m", bookingId: "b", capSats: 12_000, payeePubkey: PAYEE, notBefore: T0, notAfter: T0 + HOUR });
+    expect(() => approveMandate(h, { actor: "traveller", paymentHash: null, at: T0 })).toThrow("hash");
+  });
+  it("still enforces cap, payee, window and single use", () => {
+    const a = approveMandate(d, { actor: "traveller", paymentHash: null, at: T0 });
+    const ok = { amountSats: 12_000, payeePubkey: PAYEE, paymentHash: "cd".repeat(32), now: T0 + 1 };
+    expect(checkSpend(a, ok)).toEqual({ ok: true });
+    expect(checkSpend(a, { ...ok, amountSats: 12_001 })).toEqual({ ok: false, reason: "over_cap" });
+    expect(checkSpend(a, { ...ok, payeePubkey: OTHER })).toEqual({ ok: false, reason: "wrong_payee" });
+    expect(checkSpend(a, { ...ok, now: T0 + 2 * HOUR })).toEqual({ ok: false, reason: "too_late" });
+    expect(checkSpend(completeSpend(beginSpend(a, ok)), ok)).toEqual({ ok: false, reason: "already_used" });
+  });
+});

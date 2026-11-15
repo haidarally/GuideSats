@@ -57,6 +57,7 @@ export interface Booking {
   state: BookingState;
   paymentHash: string | null;
   invoice: string | null;
+  confirmedAt?: number | null; // plan B: when the traveller confirmed the tour happened
   history: { at: number; event: BookingEvent; from: BookingState; to: BookingState }[];
 }
 

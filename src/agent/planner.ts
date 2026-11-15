@@ -53,9 +53,10 @@ export class RuleBasedPlanner implements Planner {
     const b = lastResult(steps, "get_booking");
     if (!b) return { tool: "get_booking", args: { bookingId } };
     if (!b.ok) return { done: `unknown_booking` };
-    const booking = b.data as { state: string };
+    const booking = b.data as { state: string; mode: string; confirmed: boolean };
     if (booking.state === "proposed") return { done: "waiting_for_traveller_approval" };
     if (booking.state !== "mandated") return { done: `nothing_to_do:${booking.state}` };
+    if (booking.mode === "on_completion" && !booking.confirmed) return { done: "waiting_for_traveller_to_confirm_the_tour" };
 
     const cyc = lastResult(steps, "check_cyclone");
     if (!cyc) return { tool: "check_cyclone", args: { bookingId } };
@@ -65,16 +66,16 @@ export class RuleBasedPlanner implements Planner {
     if (!m) return { tool: "get_mandate", args: { bookingId } };
     const mandate = m.ok ? (m.data as { status: string; notBefore: number; notAfter: number } | null) : null;
     if (!mandate || mandate.status !== "approved") return { done: "no_approved_mandate" };
-    if (now < mandate.notBefore) return { done: `too_early_lock_window_opens_at:${new Date(mandate.notBefore).toISOString()}` };
-    if (now > mandate.notAfter) return { done: "lock_window_closed" };
+    if (now < mandate.notBefore) return { done: `too_early_window_opens_at:${new Date(mandate.notBefore).toISOString()}` };
+    if (now > mandate.notAfter) return { done: "window_closed" };
 
-    const inv = lastResult(steps, "request_hold_invoice");
-    if (!inv) return { tool: "request_hold_invoice", args: { bookingId } };
+    const inv = lastResult(steps, "request_invoice");
+    if (!inv) return { tool: "request_invoice", args: { bookingId } };
     if (!inv.ok) return { done: `invoice_failed:${inv.error}` };
 
     const pay = lastResult(steps, "pay_invoice");
     if (!pay) return { tool: "pay_invoice", args: { bookingId, invoice: (inv.data as { invoice: string }).invoice } };
-    return { done: pay.ok ? "locked" : `refused:${pay.error}` };
+    return { done: pay.ok ? ((pay.data as { state?: string }).state ?? "locked") : `refused:${pay.error}` };
   }
 }
 

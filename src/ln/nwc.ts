@@ -26,6 +26,7 @@ export interface NwcClientLike {
   getBalance(): Promise<{ balance: number }>;
   payInvoice(req: { invoice: string }): Promise<{ preimage: string; fees_paid: number }>;
   makeHoldInvoice(req: { amount: number; payment_hash: string; description?: string; expiry?: number }): Promise<NwcTx>;
+  makeInvoice(req: { amount: number; description?: string; expiry?: number }): Promise<NwcTx>;
   settleHoldInvoice(req: { preimage: string }): Promise<unknown>;
   cancelHoldInvoice(req: { payment_hash: string }): Promise<unknown>;
   lookupInvoice(req: { payment_hash: string }): Promise<NwcTx>;
@@ -143,6 +144,10 @@ export class NwcBackend implements LightningBackend {
         assertHoldSupport(await this.info(id));
         const t = await this.client(id).makeHoldInvoice({ amount: req.amountSats * 1000, payment_hash: req.paymentHash, description: req.description, expiry: req.expirySecs });
         if (t.payment_hash !== req.paymentHash) throw new Error("wallet returned a hold invoice for a different hash");
+        return { invoice: t.invoice, paymentHash: t.payment_hash, expiresAt: t.expires_at * 1000 };
+      },
+      makeInvoice: async (req) => {
+        const t = await this.client(id).makeInvoice({ amount: req.amountSats * 1000, description: req.description, expiry: req.expirySecs });
         return { invoice: t.invoice, paymentHash: t.payment_hash, expiresAt: t.expires_at * 1000 };
       },
       settleHoldInvoice: async (preimage) => {

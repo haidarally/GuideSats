@@ -36,6 +36,8 @@ interface Hold {
   invoiceExpiresAt: number;
   settleDeadline: number | null;
   resolve: ((o: PayOutcome) => void) | null;
+  plain: boolean; // a regular invoice (plan B): paid at once, no hold
+  preimage: string | null; // known to the receiving wallet for plain invoices
 }
 
 export interface SimOptions {
@@ -118,9 +120,24 @@ export class SimLedger {
       invoiceExpiresAt: expiresAt,
       settleDeadline: null,
       resolve: null,
+      plain: false,
+      preimage: null,
     });
     this.record(receiver, { at: now, direction: "in", amountSats: req.amountSats, paymentHash: req.paymentHash, state: "pending", description: `[${SIM_LABEL}] ${req.description}` });
     return { invoice, paymentHash: req.paymentHash, expiresAt };
+  }
+
+  private plainCount = 0;
+
+  /** Plan B: a regular invoice. The receiving wallet picks the preimage (deterministic here). */
+  makePlain(receiver: string, req: { amountSats: number; description: string; expirySecs: number }): MadeInvoice {
+    const preimage = bytesToHex(sha256(new TextEncoder().encode(`sim-preimage:${receiver}:${++this.plainCount}`)));
+    const paymentHash = bytesToHex(sha256(hexToBytes(preimage)));
+    const made = this.makeHold(receiver, { ...req, paymentHash });
+    const h = this.holds.get(`${receiver}:${paymentHash}`)!;
+    h.plain = true;
+    h.preimage = preimage;
+    return made;
   }
 
   pay(payer: string, invoice: string): Promise<PayOutcome> {
@@ -140,8 +157,19 @@ export class SimLedger {
     if (bal < h.amountSats) return Promise.resolve({ status: "failed", error: "insufficient balance" });
     const b = this.budgets.get(payer);
     if (b && b.usedSats + h.amountSats > b.totalSats) return Promise.resolve({ status: "failed", error: "wallet budget exceeded" });
-    // Lock: the sats leave the payer and sit in the HTLC (accepted hold).
     const now = this.clock();
+    if (h.plain) {
+      // Regular invoice: the sats move at once.
+      this.balances.set(payer, bal - h.amountSats);
+      this.balances.set(h.receiver, this.balance(h.receiver) + h.amountSats);
+      if (b) b.usedSats += h.amountSats;
+      h.payer = payer;
+      h.state = "settled";
+      this.updateTx(h.receiver, hash, "settled");
+      this.record(payer, { at: now, direction: "out", amountSats: h.amountSats, paymentHash: hash, state: "settled", description: `[${SIM_LABEL}] payment` });
+      return Promise.resolve({ status: "settled", preimage: h.preimage ?? undefined });
+    }
+    // Lock: the sats leave the payer and sit in the HTLC (accepted hold).
     this.balances.set(payer, bal - h.amountSats);
     if (b) b.usedSats += h.amountSats;
     h.payer = payer;
@@ -158,7 +186,7 @@ export class SimLedger {
     const hash = bytesToHex(sha256(hexToBytes(preimage)));
     const h = this.holds.get(`${receiver}:${hash}`);
     if (!h) throw new Error("no hold invoice for this preimage");
-    if (h.state !== "accepted") throw new Error(`cannot settle a hold in state ${h.state}`);
+    if (h.plain || h.state !== "accepted") throw new Error(`cannot settle a hold in state ${h.state}`);
     h.state = "settled";
     this.balances.set(receiver, this.balance(receiver) + h.amountSats);
     this.updateTx(receiver, hash, "settled");
@@ -207,7 +235,7 @@ export class SimLedger {
   }
 }
 
-const SIM_METHODS = ["get_info", "get_balance", "get_budget", "pay_invoice", "make_hold_invoice", "settle_hold_invoice", "cancel_hold_invoice", "lookup_invoice", "list_transactions"];
+const SIM_METHODS = ["get_info", "get_balance", "get_budget", "pay_invoice", "make_invoice", "make_hold_invoice", "settle_hold_invoice", "cancel_hold_invoice", "lookup_invoice", "list_transactions"];
 
 export class SimBackend implements LightningBackend {
   readonly kind = "sim" as const;
@@ -237,6 +265,7 @@ export class SimBackend implements LightningBackend {
       getInfo: async () => this.info(id),
       getBalance: async () => l.balance(id),
       makeHoldInvoice: async (req) => l.makeHold(id, req),
+      makeInvoice: async (req) => l.makePlain(id, req),
       settleHoldInvoice: async (preimage) => l.settle(id, preimage),
       cancelHoldInvoice: async (hash) => l.cancel(id, hash),
       lookupInvoice: async (hash) => l.lookup(id, hash),

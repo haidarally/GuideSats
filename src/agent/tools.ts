@@ -10,7 +10,7 @@ export interface ToolCall {
   args: Record<string, unknown>;
 }
 
-export const TOOL_NAMES = ["list_tours", "propose_booking", "get_booking", "get_mandate", "check_cyclone", "request_hold_invoice", "pay_invoice"] as const;
+export const TOOL_NAMES = ["list_tours", "propose_booking", "get_booking", "get_mandate", "check_cyclone", "request_invoice", "pay_invoice"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; error: string };
@@ -19,10 +19,10 @@ export type ToolResult = { ok: true; data: unknown } | { ok: false; error: strin
 export interface AgentFacade {
   listTours(): { id: string; title: string; area: string; priceSats: number; startAt: number }[];
   proposeBooking(tourId: string): { bookingId: string; capSats: number };
-  getBooking(id: string): { id: string; state: string; tourId: string; priceSats: number; tourStart: number; hasInvoice: boolean };
+  getBooking(id: string): { id: string; state: string; mode: string; confirmed: boolean; tourId: string; priceSats: number; tourStart: number; hasInvoice: boolean };
   getMandate(bookingId: string): { status: string; capSats: number; payeePubkey: string; notBefore: number; notAfter: number } | null;
   checkCyclone(bookingId: string): { cancel: boolean; event?: string };
-  requestHoldInvoice(bookingId: string): Promise<string>;
+  requestInvoice(bookingId: string): Promise<string>;
   payInvoice(bookingId: string, invoice: string): Promise<{ ok: boolean; reason?: string; state?: string }>;
   now(): number;
 }
@@ -37,7 +37,7 @@ export function agentFacade(svc: BookingService): AgentFacade {
     },
     getBooking: (id) => {
       const b = svc.booking(id);
-      return { id: b.id, state: b.state, tourId: b.tourId, priceSats: b.priceSats, tourStart: b.tourStart, hasInvoice: b.invoice !== null };
+      return { id: b.id, state: b.state, mode: b.mode, confirmed: Boolean(b.confirmedAt), tourId: b.tourId, priceSats: b.priceSats, tourStart: b.tourStart, hasInvoice: b.invoice !== null };
     },
     getMandate: (bookingId) => {
       const m = svc.mandate(bookingId);
@@ -48,7 +48,7 @@ export function agentFacade(svc: BookingService): AgentFacade {
       const v = cycloneVerdict(svc.currentFeed(), { now: svc.now(), tourStart: b.tourStart, tourEnd: b.tourEnd });
       return v.cancel ? { cancel: true, event: `${v.event?.name} (${v.event?.alertlevel})` } : { cancel: false };
     },
-    requestHoldInvoice: (bookingId) => svc.requestHoldInvoice(bookingId),
+    requestInvoice: (bookingId) => svc.requestInvoice(bookingId),
     payInvoice: async (bookingId, invoice) => {
       const r = await svc.payWithinMandate(bookingId, invoice);
       return r.ok ? { ok: true, state: r.state } : { ok: false, reason: r.reason };
@@ -76,8 +76,8 @@ export async function runTool(f: AgentFacade, call: ToolCall): Promise<ToolResul
         return { ok: true, data: f.getMandate(str(call.args.bookingId, "bookingId")) };
       case "check_cyclone":
         return { ok: true, data: f.checkCyclone(str(call.args.bookingId, "bookingId")) };
-      case "request_hold_invoice":
-        return { ok: true, data: { invoice: await f.requestHoldInvoice(str(call.args.bookingId, "bookingId")) } };
+      case "request_invoice":
+        return { ok: true, data: { invoice: await f.requestInvoice(str(call.args.bookingId, "bookingId")) } };
       case "pay_invoice": {
         const r = await f.payInvoice(str(call.args.bookingId, "bookingId"), str(call.args.invoice, "invoice"));
         return r.ok ? { ok: true, data: r } : { ok: false, error: r.reason ?? "refused" };

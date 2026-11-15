@@ -43,7 +43,7 @@ sequenceDiagram
     T->>T: make secret P, H = SHA-256(P), keep P on the phone
     T->>S: approve mandate with H (traveller door only)
     A->>S: check_cyclone, get_mandate
-    A->>S: request_hold_invoice
+    A->>S: request_invoice
     S->>GW: make_hold_invoice(amount, H)
     GW-->>S: BOLT11 invoice
     A->>S: pay_invoice(invoice)

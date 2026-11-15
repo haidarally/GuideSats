@@ -18,6 +18,7 @@ function fake(over: Partial<NwcClientLike> = {}, methods = ["get_info", "pay_inv
     getBalance: async () => (calls.push("getBalance"), { balance: 10_000_999 }),
     payInvoice: async () => (calls.push("payInvoice"), { preimage: "00".repeat(32), fees_paid: 0 }),
     makeHoldInvoice: async (r) => (calls.push(`makeHoldInvoice:${r.amount}`), tx({ payment_hash: r.payment_hash })),
+    makeInvoice: async (r) => (calls.push(`makeInvoice:${r.amount}`), tx({ payment_hash: "cd".repeat(32) })),
     settleHoldInvoice: async () => (calls.push("settle"), {}),
     cancelHoldInvoice: async () => (calls.push("cancel"), {}),
     lookupInvoice: async () => (calls.push("lookup"), tx({ state: "accepted", settle_deadline: 123 })),

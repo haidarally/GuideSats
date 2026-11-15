@@ -16,7 +16,7 @@ describe("agent tools: structure", () => {
   it("the facade exposes no approval or wallet handle", async () => {
     const w = await buildSimWorld({ clock: () => T0 });
     const f = agentFacade(w.svc) as unknown as Record<string, unknown>;
-    expect(Object.keys(f).sort()).toEqual(["checkCyclone", "getBooking", "getMandate", "listTours", "now", "payInvoice", "proposeBooking", "requestHoldInvoice"]);
+    expect(Object.keys(f).sort()).toEqual(["checkCyclone", "getBooking", "getMandate", "listTours", "now", "payInvoice", "proposeBooking", "requestInvoice"]);
     for (const v of Object.values(f)) expect(typeof v).toBe("function");
   });
   it("tools.ts and planner.ts never import the approval function, the backend or the store", () => {
@@ -54,7 +54,7 @@ describe("rule-based planner", () => {
     w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: H, at: T0 });
     const r = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
     expect(r.outcome).toBe("locked");
-    expect(r.steps.map((s) => s.call.tool)).toEqual(["get_booking", "check_cyclone", "get_mandate", "request_hold_invoice", "pay_invoice"]);
+    expect(r.steps.map((s) => s.call.tool)).toEqual(["get_booking", "check_cyclone", "get_mandate", "request_invoice", "pay_invoice"]);
     expect(w.ledger.balance("traveller")).toBe(99_000);
   });
   it("an over-mandate invoice is refused even if the agent is told to pay it", async () => {
@@ -67,5 +67,18 @@ describe("rule-based planner", () => {
     const stranger = encodeSimInvoice({ network: "regtest", amountSats: 21_000, paymentHash: H, description: "x", timestamp: T0 / 1000, expirySecs: 600, payeeNodeId: simNodeId("guide_lagoon") });
     expect(await runTool(f, { tool: "pay_invoice", args: { bookingId: booking.id, invoice: stranger } })).toEqual({ ok: false, error: "invoice_wrong_payee" });
     expect(w.ledger.balance("traveller")).toBe(120_000);
+  });
+
+  it("plan B: waits for the traveller's confirmation, then pays", async () => {
+    let now = T0;
+    const w = await buildSimWorld({ clock: () => now });
+    const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: T0 });
+    expect((await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id })).outcome).toBe("waiting_for_traveller_to_confirm_the_tour");
+    now += 9 * 3_600_000;
+    w.svc.confirmTourHappened(booking.id);
+    const r = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
+    expect(r.outcome).toBe("paid");
+    expect(w.ledger.balance("guide_lagoon")).toBe(12_000);
   });
 });

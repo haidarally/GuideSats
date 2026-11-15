@@ -5,7 +5,7 @@
 //   the agent        -> agentFacade() (read, propose, request invoice, pay within mandate)
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
-import { applyEvent, isTerminal, type Booking } from "../domain/booking";
+import { applyEvent, isTerminal, type Booking, type PaymentMode } from "../domain/booking";
 import { cycloneVerdict, type CycloneVerdict, type GdacsFeed } from "../domain/cyclone";
 import { approveMandate, draftMandate, revokeMandate, type Mandate, type TravellerApproval } from "../domain/mandate";
 import type { LightningBackend, PayOutcome } from "../ln/backend";
@@ -122,8 +122,13 @@ export class BookingService {
 
   // ---------- traveller door ----------
 
-  /** Creates a booking and a DRAFT mandate. The cap and payee come from the catalogue, never from the caller. */
-  proposeBooking(tourId: string): { booking: Booking; mandate: Mandate } {
+  /**
+   * Creates a booking and a DRAFT mandate. The cap and payee come from the catalogue, never from the caller.
+   * mode "hold": the agent may lock the sats from lockLeadHours before the tour until it starts.
+   * mode "on_completion" (plan B, wallets without holds): the agent may pay only after the tour,
+   * once the traveller confirms it happened (up to 48 h after the end).
+   */
+  proposeBooking(tourId: string, mode: PaymentMode = "hold"): { booking: Booking; mandate: Mandate } {
     const t = this.tour(tourId);
     const g = this.guide(t.guideId);
     const n = ++this.seq;
@@ -136,19 +141,22 @@ export class BookingService {
       priceSats: t.priceSats,
       tourStart: t.startAt,
       tourEnd: t.startAt + t.durationHours * 3_600_000,
-      mode: "hold",
+      mode,
       state: "proposed",
       paymentHash: null,
       invoice: null,
+      confirmedAt: null,
       history: [],
     };
+    const tourEnd = t.startAt + t.durationHours * 3_600_000;
     const mandate = draftMandate({
       id: `md_${n}`,
       bookingId: booking.id,
       capSats: t.priceSats,
       payeePubkey: g.payeePubkey,
-      notBefore: Math.min(now, t.startAt - this.cfg.lockLeadHours * 3_600_000),
-      notAfter: t.startAt,
+      notBefore: mode === "hold" ? Math.min(now, t.startAt - this.cfg.lockLeadHours * 3_600_000) : t.startAt,
+      notAfter: mode === "hold" ? t.startAt : tourEnd + 48 * 3_600_000,
+      requireHash: mode === "hold",
     });
     this.store.insertMandate(mandate);
     this.save(booking);
@@ -156,10 +164,11 @@ export class BookingService {
     return { booking, mandate };
   }
 
-  /** The traveller approves the mandate and binds H = SHA-256(P). P stays on the traveller's phone. */
+  /** The traveller approves the mandate and (hold mode) binds H = SHA-256(P). P stays on the traveller's phone. */
   approveMandate(bookingId: string, approval: TravellerApproval): Mandate {
-    if (!HEX32.test(approval.paymentHash)) throw new ServiceError("bad_payment_hash");
     const b = this.booking(bookingId);
+    if (b.mode === "hold" && (approval.paymentHash === null || !HEX32.test(approval.paymentHash))) throw new ServiceError("bad_payment_hash");
+    if (b.mode === "on_completion" && approval.paymentHash !== null) throw new ServiceError("plan_b_takes_no_hash");
     const m = this.store.mandateForBooking(bookingId);
     if (!m) throw new ServiceError("no_mandate");
     const approved = approveMandate(m, approval);
@@ -167,6 +176,17 @@ export class BookingService {
     this.save({ ...applyEvent(b, "APPROVE_MANDATE", approval.at), paymentHash: approval.paymentHash });
     this.store.audit(approval.at, "mandate_approved", { bookingId, capSats: approved.capSats, payeePubkey: approved.payeePubkey, paymentHash: approval.paymentHash });
     return approved;
+  }
+
+  /** Plan B: the traveller confirms the tour happened; only then may the agent pay. */
+  confirmTourHappened(bookingId: string): Booking {
+    const b = this.booking(bookingId);
+    if (b.mode !== "on_completion") throw new ServiceError("not_plan_b");
+    if (b.state !== "mandated") throw new ServiceError(`not_mandated:${b.state}`);
+    const now = this.clock();
+    if (now < b.tourStart) throw new ServiceError("tour_not_started");
+    this.store.audit(now, "tour_confirmed", { bookingId });
+    return this.save({ ...b, confirmedAt: now });
   }
 
   cancelByTraveller(bookingId: string): Booking {
@@ -235,13 +255,20 @@ export class BookingService {
 
   // ---------- agent door ----------
 
-  async requestHoldInvoice(bookingId: string): Promise<string> {
+  async requestInvoice(bookingId: string): Promise<string> {
     const b = this.booking(bookingId);
     if (b.state !== "mandated") throw new ServiceError(`not_mandated:${b.state}`);
     const m = this.store.mandateForBooking(bookingId);
-    if (!m || m.status !== "approved" || !m.paymentHash) throw new ServiceError("no_approved_mandate");
+    if (!m || m.status !== "approved") throw new ServiceError("no_approved_mandate");
     if (b.invoice) return b.invoice;
     const t = this.tour(b.tourId);
+    if (b.mode === "on_completion") {
+      if (!b.confirmedAt) throw new ServiceError("not_confirmed_by_traveller");
+      const made = await this.backend.receiver(b.guideId).makeInvoice({ amountSats: b.priceSats, description: t.title.en, expirySecs: 600 });
+      this.save({ ...this.booking(bookingId), invoice: made.invoice, paymentHash: made.paymentHash });
+      return made.invoice;
+    }
+    if (!m.paymentHash) throw new ServiceError("no_approved_mandate");
     const expirySecs = Math.max(60, Math.min(this.cfg.invoiceExpirySecs, Math.floor((b.tourStart - this.clock()) / 1000)));
     const made = await this.backend.receiver(b.guideId).makeHoldInvoice({ amountSats: b.priceSats, paymentHash: m.paymentHash, description: t.title.en, expirySecs });
     this.save({ ...this.booking(bookingId), invoice: made.invoice });
