@@ -1,0 +1,38 @@
+{
+  "name": "guidesats",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An AI agent pays a small tour guide in sats under a mandate only the traveller can approve; a cyclone alert refunds the traveller.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "build:web": "node scripts/build-web.mjs",
+    "demo": "node scripts/build-web.mjs && tsx src/server/main.ts",
+    "e2e:sim": "tsx scripts/e2e-sim.ts",
+    "e2e:nwc": "tsx scripts/e2e-nwc.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@getalby/sdk": "9.0.0",
+    "@hono/node-server": "2.1.6",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/base": "2.4.0",
+    "hono": "4.13.16",
+    "light-bolt11-decoder": "3.2.0",
+    "preact": "11.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "fast-check": "4.10.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
