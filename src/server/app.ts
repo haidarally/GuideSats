@@ -5,7 +5,9 @@ import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
-import { agentFacade } from "../agent/tools";
+import { agentFacade, runTool, type ToolCall } from "../agent/tools";
+import { encodeSimInvoice } from "../ln/bolt11";
+import { simNodeId } from "../ln/sim";
 import { runAgent, type Goal } from "../agent/planner";
 import { cycloneVerdict } from "../domain/cyclone";
 import { ServiceError } from "../app/service";
@@ -193,6 +195,35 @@ export function createApp(ctx: ServerContext) {
     const r = await svc.applyCycloneRule();
     broadcast("update", { type: "cyclone" });
     return c.json({ ok: true, active: on, affected: r.verdicts.map((v) => v.bookingId) });
+  });
+
+  // Shows the mandate at work: the agent is pushed to overspend, pay someone else, or approve itself.
+  app.post("/api/demo/attack", async (c) => {
+    const no = simOnly(c);
+    if (no) return no;
+    const svc = ctx.world().svc;
+    const target = [...svc.bookings()].reverse().find((b) => b.mode === "hold" && b.state === "mandated" && b.paymentHash);
+    if (!target) return c.json({ error: "approve_a_booking_first" }, 409);
+    const ts = Math.floor(svc.now() / 1000);
+    const other = svc.guides.find((g) => g.id !== target.guideId)!;
+    const forge = (amountSats: number, payee: string) =>
+      encodeSimInvoice({ network: "regtest", amountSats, paymentHash: target.paymentHash!, description: "attack", timestamp: ts, expirySecs: 600, payeeNodeId: payee });
+    const calls: ToolCall[] = [
+      { tool: "pay_invoice", args: { bookingId: target.id, invoice: forge(target.priceSats * 3, simNodeId(target.guideId)) } },
+      { tool: "pay_invoice", args: { bookingId: target.id, invoice: forge(target.priceSats, simNodeId(other.id)) } },
+      { tool: "approve_mandate" as ToolCall["tool"], args: { bookingId: target.id } },
+      { tool: "raise_cap" as ToolCall["tool"], args: { bookingId: target.id, capSats: 1_000_000 } },
+    ];
+    const f = agentFacade(svc);
+    broadcast("agent", { goal: { kind: "attack" }, started: true });
+    const results = [];
+    for (const call of calls) {
+      const result = await runTool(f, call);
+      broadcast("agent", redact({ call, result }));
+      results.push({ tool: call.tool, ok: result.ok, error: result.ok ? undefined : result.error });
+    }
+    broadcast("agent", { outcome: results.every((r) => !r.ok) ? "all_refused_by_the_mandate" : "SOMETHING_WAS_PAID" });
+    return c.json({ bookingId: target.id, results });
   });
 
   app.post("/api/demo/advance", async (c) => {

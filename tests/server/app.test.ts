@@ -101,4 +101,21 @@ describe("HTTP API", () => {
     expect(w.ledger.balance("guide_lagoon")).toBe(12_000);
     expect((await post("/api/traveller/bookings", { tourId: "tour_lagoon", mode: "free" })).status).toBe(400);
   });
+
+  it("demo attack: overspend, other payee, self-approval and cap raise are all refused", async () => {
+    const { call, w } = await setup();
+    expect((await call("/api/demo/attack", {})).status).toBe(409);
+    const { bookingId } = (await (await call("/api/traveller/bookings", { tourId: "tour_lemorne" })).json()) as { bookingId: string };
+    await call(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: pair().h });
+    const r = (await (await call("/api/demo/attack", {})).json()) as { results: { tool: string; ok: boolean; error?: string }[] };
+    expect(r.results.map((x) => [x.tool, x.ok, x.error])).toEqual([
+      ["pay_invoice", false, "invoice_wrong_amount"],
+      ["pay_invoice", false, "invoice_wrong_payee"],
+      ["approve_mandate", false, "unknown tool: approve_mandate"],
+      ["raise_cap", false, "unknown tool: raise_cap"],
+    ]);
+    expect(w().ledger.balance("traveller")).toBe(120_000);
+    // The honest path still works afterwards.
+    expect(((await (await call("/api/agent/run", { bookingId })).json()) as { outcome: string }).outcome).toBe("locked");
+  });
 });

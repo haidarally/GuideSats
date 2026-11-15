@@ -61,3 +61,18 @@ test("plan B: book after, approve, skip past the tour, confirm, agent pays", asy
   await page.locator("#guide-select").selectOption("guide_lagoon");
   await expect(page.getByTestId("guide-balance")).toContainText("12 000");
 });
+
+test("the agent console shows every overspend attempt refused", async ({ page, request }) => {
+  await request.post("/api/demo/reset", { data: {} });
+  await page.goto("/");
+  await page.getByTestId("book-tour_chamarel").click();
+  await page.getByTestId("approve").click();
+  await page.getByTestId("tab-agent").click();
+  await page.getByTestId("attack").click();
+  const log = page.getByTestId("agent-log");
+  await expect(log).toContainText("all_refused_by_the_mandate");
+  await expect(log).toContainText("invoice_wrong_amount");
+  await expect(log).toContainText("invoice_wrong_payee");
+  await expect(log).toContainText("unknown tool: approve_mandate");
+  await page.screenshot({ path: `test-results/${test.info().project.name}-attack.png`, fullPage: true });
+});

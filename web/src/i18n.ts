@@ -70,6 +70,7 @@ const en = {
   askAgentPay: "Ask the agent to pay the guide",
   waitTour: "You can confirm once the tour has started.",
   scan: "Scan QR",
+  attack: "Push the agent to overspend",
 };
 
 const fr: typeof en = {
@@ -141,6 +142,7 @@ const fr: typeof en = {
   askAgentPay: "Demander à l'agent de payer le guide",
   waitTour: "Vous pourrez confirmer une fois l'excursion commencée.",
   scan: "Scanner le QR",
+  attack: "Pousser l'agent à trop dépenser",
 };
 
 export const STRINGS = { en, fr };

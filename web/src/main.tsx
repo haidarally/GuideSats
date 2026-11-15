@@ -19,7 +19,7 @@ const initialLang = (): Lang => {
 };
 
 function describe(step: { call?: { tool: string; args: Record<string, unknown> }; result?: { ok: boolean; error?: string; data?: unknown }; outcome?: string }): LogLine {
-  if (step.outcome) return { at: Date.now(), text: `⇢ ${step.outcome}`, ok: !/refused|failed|no_|unknown/.test(step.outcome) };
+  if (step.outcome) return { at: Date.now(), text: `⇢ ${step.outcome}`, ok: step.outcome === "all_refused_by_the_mandate" || !/refused|failed|no_|unknown|SOMETHING/.test(step.outcome) };
   if (step.call) {
     const args = Object.entries(step.call.args).map(([k, v]) => `${k}=${String(v).slice(0, 24)}`).join(" ");
     const res = step.result?.ok ? "ok" : `refused: ${step.result?.error}`;
