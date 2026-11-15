@@ -17,6 +17,9 @@ export function loadSeed(): Seed {
   return JSON.parse(readFileSync(new URL("../../fixtures/seed.json", import.meta.url), "utf8")) as Seed;
 }
 
+/** The lock window must close this long before the hold limit, so a late meeting can still settle. */
+export const MEETING_BUFFER_HOURS = 2;
+
 export interface SimWorldOptions {
   clock?: () => number;
   seed?: Seed;
@@ -34,7 +37,11 @@ export async function buildSimWorld(opts: SimWorldOptions = {}) {
   const seed = opts.seed ?? loadSeed();
   const balances: Record<string, number> = { [seed.traveller.id]: seed.traveller.walletSats };
   for (const g of seed.guides) balances[g.id] = g.walletSats;
-  const ledger = new SimLedger({ clock, balances, holdMaxSecs: opts.holdMaxSecs });
+  // The hold limit (HTLC timeout / settle_deadline) is assumed to be 12 h until the first real run measures it.
+  // The lock window opens MEETING_BUFFER_HOURS inside it, so a hold locked at the earliest moment still
+  // settles when the guide and the traveller meet a little late.
+  const holdMaxSecs = opts.holdMaxSecs ?? 12 * 3600;
+  const ledger = new SimLedger({ clock, balances, holdMaxSecs });
   const backend = new SimBackend(ledger);
   const guides: Guide[] = [];
   for (const g of seed.guides) {
@@ -54,7 +61,7 @@ export async function buildSimWorld(opts: SimWorldOptions = {}) {
   const log = opts.log ?? makeLogger(() => {});
   const svc = new BookingService(store, backend, clock, opts.feed ?? (() => ({ type: "FeatureCollection", features: [] })), log, tours, guides, {
     travellerWalletId: seed.traveller.id,
-    lockLeadHours: 12,
+    lockLeadHours: Math.max(1, holdMaxSecs / 3600 - MEETING_BUFFER_HOURS),
     invoiceExpirySecs: 3600,
     acceptTimeoutMs: 2000,
     pollMs: 20,
