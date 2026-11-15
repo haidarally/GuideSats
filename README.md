@@ -37,7 +37,7 @@ You can also type a request for the agent, in English or French: *"book the lago
 ## Test it
 
 ```bash
-npm run check        # typecheck + 135 unit/property/API tests + the 4 end-to-end scenarios; offline, no keys
+npm run check        # typecheck + 149 unit/property/API tests + the 4 end-to-end scenarios; offline, no keys
 npm test             # unit, property and API tests only (Vitest)
 npm run e2e:sim      # the four demo scenarios (settle, cyclone refund, refusals, plan B), printed as a report
 npm run test:e2e     # Playwright: 4 flows at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once
@@ -110,7 +110,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 ## Constraints (honest)
 
 - **Hold invoices are young.** NWC-03 is a draft and few wallets support it. For wallets without it, plan B (pay on completion, core NIP-47 only) is built in. No money moves before the tour, and a cyclone means nothing is paid. It gives the guide less certainty than a hold.
-- **Hold time is limited** by the Lightning HTLC timeout. So the agent locks the sats close to the tour (from 12 h before; to be measured on the first real run), and at booking only the approved mandate is recorded.
+- **Hold time is limited** by the Lightning HTLC timeout. So the agent locks the sats close to the tour (from 10 h before: an assumed 12 h hold limit minus a 2 h meeting buffer; to be measured on the first real run), and at booking only the approved mandate is recorded.
 - **Wallet budgets (NWC-13) are optional.** When a wallet offers no budget, the app's mandate is the only cap.
 - **Test wallets on one shared node** sign invoices with the same node key, which weakens the payee check between them. Real guides on their own wallets do not have this problem.
 - **After settlement, a refund** is a new payment that the guide starts. That is out of scope for v1.

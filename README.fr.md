@@ -45,7 +45,7 @@ L'agent ne paie que la facture que l'appli a elle-même demandée au portefeuill
 ## Tester
 
 ```bash
-npm run check        # typecheck + 135 tests (unitaires, propriété, API) + les 4 scénarios de bout en bout ; hors ligne, sans clé
+npm run check        # typecheck + 149 tests (unitaires, propriété, API) + les 4 scénarios de bout en bout ; hors ligne, sans clé
 npm run e2e:sim      # les quatre scénarios de démo, sous forme de rapport
 npm run test:e2e     # Playwright à 360 px (EN) et 412 px (FR) ; une fois avant : npx playwright install chromium
 ```
@@ -131,7 +131,7 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 ## Contraintes (honnêtes)
 
 - **Les factures « hold » sont récentes.** NWC-03 est un brouillon et peu de portefeuilles le prennent en charge. Le plan B (paiement après l'excursion, NIP-47 de base) est intégré : rien ne bouge avant l'excursion, et en cas de cyclone rien n'est payé.
-- **La durée d'un « hold » est limitée.** L'agent bloque donc les sats peu avant l'excursion : à partir de 12 h avant, durée à mesurer lors du premier vrai essai.
+- **La durée d'un « hold » est limitée.** L'agent bloque donc les sats peu avant l'excursion : à partir de 10 h avant (limite supposée de 12 h moins 2 h de marge pour le rendez-vous), durée à mesurer lors du premier vrai essai.
 - **Les budgets côté portefeuille (NWC-13) sont optionnels.** Sans budget, le mandat de l'appli reste le seul plafond.
 - **Des portefeuilles de test sur un même nœud** signent avec la même clé, ce qui affaiblit le contrôle du bénéficiaire entre eux.
 - **GDACS liste les pays touchés par événement.** Un cyclone qui passe près de Maurice sans y être listé ne déclenche pas la règle.
