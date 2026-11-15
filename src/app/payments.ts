@@ -5,7 +5,7 @@
 // reports the hold as accepted.
 import { cycloneVerdict, type GdacsFeed } from "../domain/cyclone";
 import { applyEvent, type Booking } from "../domain/booking";
-import { beginSpend, checkSpend, completeSpend, releaseSpend } from "../domain/mandate";
+import { beginSpend, checkSpend, completeSpend, releaseSpend, revokeMandate, type Mandate } from "../domain/mandate";
 import { checkInvoice } from "../ln/invoiceCheck";
 import type { LightningBackend, PayOutcome, ReceiverWallet } from "../ln/backend";
 import type { Store } from "../store/db";
@@ -41,6 +41,11 @@ async function waitAccepted(receiver: ReceiverWallet, hash: string, outcome: () 
     if (Date.now() >= deadline) return false;
     await sleep(pollMs);
   }
+}
+
+/** Nothing left the wallet: re-arm the single use if the booking is still payable, else close the mandate. */
+function giveBack(d: PaymentDeps, bookingId: string, consuming: Mandate): Mandate {
+  return d.store.getBooking(bookingId)?.state === "mandated" ? releaseSpend(consuming) : revokeMandate(consuming);
 }
 
 export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoice: string): Promise<PayResult> {
@@ -99,13 +104,22 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
     const at = d.clock();
     if (o.status === "settled") {
       d.store.casMandate(completeSpend(consuming), "consuming");
-      d.store.putBooking(applyEvent(d.store.getBooking(bookingId)!, "PAY_ON_COMPLETION", at));
+      const fresh = d.store.getBooking(bookingId)!;
+      if (fresh.state !== "mandated") {
+        // Cannot happen through the service (cancel and the cyclone rule wait for an in-flight payment),
+        // but never throw after money moved: record it loudly instead.
+        d.store.audit(at, "paid_but_booking_changed", { bookingId, state: fresh.state, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
+        d.log.warn("paid_but_booking_changed", { bookingId, state: fresh.state });
+        d.onFinal?.(bookingId, o);
+        return { ok: false, reason: `paid_but_booking_changed:${fresh.state}` };
+      }
+      d.store.putBooking(applyEvent(fresh, "PAY_ON_COMPLETION", at));
       d.store.audit(at, "paid_on_completion", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
       d.onFinal?.(bookingId, o);
       return { ok: true, state: "paid", amountSats: spend.amountSats };
     }
     if (o.status === "failed") {
-      d.store.casMandate(releaseSpend(consuming), "consuming");
+      d.store.casMandate(giveBack(d, bookingId, consuming), "consuming");
       d.store.audit(at, "pay_failed", { bookingId, error: o.error });
       return { ok: false, reason: `payment_failed:${o.error}` };
     }
@@ -125,6 +139,19 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
   if (accepted) {
     d.store.casMandate(completeSpend(consuming), "consuming");
     const fresh = d.store.getBooking(bookingId)!;
+    if (fresh.state !== "mandated") {
+      // The booking moved on while the lock was in flight (defence in depth: the service refuses a
+      // traveller cancel during a payment, and the cyclone rule cancels the hold itself). Give the sats back now.
+      let cancelled = true;
+      try {
+        await receiver.cancelHoldInvoice(spend.paymentHash);
+      } catch {
+        cancelled = false; // the hold still times out at its settle deadline
+      }
+      d.store.audit(at, "lock_aborted_booking_changed", { bookingId, state: fresh.state, cancelled, paymentHash: spend.paymentHash });
+      d.log.warn("lock_aborted_booking_changed", { bookingId, state: fresh.state, cancelled });
+      return { ok: false, reason: `booking_changed_during_payment:${fresh.state}` };
+    }
     d.store.putBooking({ ...applyEvent(fresh, "LOCK", at), invoice });
     d.store.audit(at, "locked", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
     d.log.info("locked", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
@@ -133,9 +160,15 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
   const o = outcome as PayOutcome | null;
   if (o && o.status === "failed") {
     // Definite failure: nothing left the wallet, so the traveller's single use is given back.
-    d.store.casMandate(releaseSpend(consuming), "consuming");
+    d.store.casMandate(giveBack(d, bookingId, consuming), "consuming");
     d.store.audit(at, "pay_failed", { bookingId, error: o.error });
     return { ok: false, reason: `payment_failed:${o.error}` };
+  }
+  if (o && o.status === "refunded") {
+    // The hold was cancelled before we saw it accepted (e.g. the cyclone rule): the sats are back.
+    d.store.casMandate(giveBack(d, bookingId, consuming), "consuming");
+    d.store.audit(at, "pay_refunded", { bookingId });
+    return { ok: false, reason: "payment_refunded" };
   }
   // Unknown (timeout): fail closed. The mandate stays reserved; nobody can pay twice.
   d.store.audit(at, "pay_unknown", { bookingId });

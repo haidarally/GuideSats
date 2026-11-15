@@ -196,9 +196,14 @@ export class BookingService {
 
   cancelByTraveller(bookingId: string): Booking {
     const b = this.booking(bookingId);
-    const next = applyEvent(b, "TRAVELLER_CANCEL", this.clock());
     const m = this.store.mandateForBooking(bookingId);
-    if (m && (m.status === "approved" || m.status === "pending_approval")) this.store.casMandate(revokeMandate(m), m.status);
+    // A payment is in flight (or its outcome is unknown): cancelling now would leave the sats in a hold
+    // (or, in plan B, paid) under a booking that says "cancelled". Refuse; the payment completes or fails first.
+    if (m?.status === "consuming") throw new ServiceError("payment_in_flight");
+    const next = applyEvent(b, "TRAVELLER_CANCEL", this.clock());
+    if (m && (m.status === "approved" || m.status === "pending_approval") && !this.store.casMandate(revokeMandate(m), m.status)) {
+      throw new ServiceError("mandate_changed");
+    }
     return this.save(next);
   }
 
@@ -219,24 +224,47 @@ export class BookingService {
 
   // ---------- system: cyclone watcher + expiry ----------
 
+  /**
+   * The watcher. Every booking is re-read from the store at each step (a payment may land between two
+   * awaits), and one failing wallet call never stops the refunds of the other bookings.
+   */
   async applyCycloneRule(): Promise<{ verdicts: { bookingId: string; verdict: CycloneVerdict }[] }> {
     const feed = this.feed();
     const now = this.clock();
     const out: { bookingId: string; verdict: CycloneVerdict }[] = [];
-    for (const b of this.store.listBookings()) {
-      if (isTerminal(b.state)) continue;
+    for (const { id } of this.store.listBookings()) {
+      const b = this.store.getBooking(id);
+      if (!b || isTerminal(b.state)) continue;
       const verdict = cycloneVerdict(feed, { now, tourStart: b.tourStart, tourEnd: b.tourEnd });
       if (!verdict.cancel) continue;
       out.push({ bookingId: b.id, verdict });
-      const m = this.store.mandateForBooking(b.id);
-      if (b.state === "locked" && b.paymentHash) {
-        await this.backend.receiver(b.guideId).cancelHoldInvoice(b.paymentHash);
-        this.store.audit(now, "refunded_cyclone", { bookingId: b.id, amountSats: b.priceSats, eventid: verdict.event?.eventid });
-        this.save(applyEvent(b, "CYCLONE_CANCEL", now));
-      } else {
-        if (m && (m.status === "approved" || m.status === "pending_approval")) this.store.casMandate(revokeMandate(m), m.status);
-        this.store.audit(now, "skipped_cyclone", { bookingId: b.id, eventid: verdict.event?.eventid });
-        this.save(applyEvent(b, "CYCLONE_CANCEL", now));
+      const eventid = verdict.event?.eventid;
+      try {
+        const m = this.store.mandateForBooking(b.id);
+        if (b.state === "locked" && b.paymentHash) {
+          await this.backend.receiver(b.guideId).cancelHoldInvoice(b.paymentHash);
+          this.store.audit(now, "refunded_cyclone", { bookingId: b.id, amountSats: b.priceSats, eventid });
+          this.save(applyEvent(this.booking(b.id), "CYCLONE_CANCEL", now));
+        } else if (m?.status === "consuming") {
+          if (b.mode === "hold" && b.paymentHash && b.invoice) {
+            // A lock is in flight, or its outcome is unknown. Cancel the hold invoice at the guide's wallet:
+            // an accepted hold is refunded at once, and a payment that has not landed yet can no longer land.
+            await this.backend.receiver(b.guideId).cancelHoldInvoice(b.paymentHash);
+            this.store.audit(now, "cancelled_in_flight_hold", { bookingId: b.id, eventid });
+            this.save(applyEvent(this.booking(b.id), "CYCLONE_CANCEL", now));
+          } else {
+            // Plan B: a plain payment in flight cannot be undone. Leave it to finish; the next tick sees "paid".
+            this.store.audit(now, "cyclone_deferred_payment_in_flight", { bookingId: b.id, eventid });
+          }
+        } else {
+          if (m && (m.status === "approved" || m.status === "pending_approval")) this.store.casMandate(revokeMandate(m), m.status);
+          this.store.audit(now, "skipped_cyclone", { bookingId: b.id, eventid });
+          this.save(applyEvent(b, "CYCLONE_CANCEL", now));
+        }
+      } catch (e) {
+        // Not refunded yet: say so, and let the next tick retry. Never mark a booking refunded on a failed call.
+        this.store.audit(now, "cyclone_cancel_failed", { bookingId: b.id, eventid });
+        this.log.warn("cyclone_cancel_failed", { bookingId: b.id, err: e });
       }
     }
     if (out.length > 0) this.emit({ type: "cyclone", verdict: out[0]!.verdict, affected: out.map((o) => o.bookingId) });
@@ -246,13 +274,19 @@ export class BookingService {
   /** Locked bookings whose hold timed out are marked refunded (the wallet already returned the sats). */
   async reconcileHolds(): Promise<string[]> {
     const changed: string[] = [];
-    for (const b of this.store.listBookings()) {
-      if (b.state !== "locked" || !b.paymentHash) continue;
-      const s = await this.backend.receiver(b.guideId).lookupInvoice(b.paymentHash);
-      if (s.state === "expired" || s.state === "cancelled") {
-        this.save(applyEvent(b, "HOLD_EXPIRED", this.clock()));
-        this.store.audit(this.clock(), "refunded_expired", { bookingId: b.id });
-        changed.push(b.id);
+    for (const { id } of this.store.listBookings()) {
+      const b = this.store.getBooking(id);
+      if (!b || b.state !== "locked" || !b.paymentHash) continue;
+      try {
+        const s = await this.backend.receiver(b.guideId).lookupInvoice(b.paymentHash);
+        const fresh = this.booking(id); // the cyclone rule may have moved it during the await
+        if (fresh.state === "locked" && (s.state === "expired" || s.state === "cancelled")) {
+          this.save(applyEvent(fresh, "HOLD_EXPIRED", this.clock()));
+          this.store.audit(this.clock(), "refunded_expired", { bookingId: id });
+          changed.push(id);
+        }
+      } catch (e) {
+        this.log.warn("reconcile_failed", { bookingId: id, err: e });
       }
     }
     return changed;
