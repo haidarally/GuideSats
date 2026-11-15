@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`redact > matches the snapshot (no secret, preimage or PII survives) 1`] = `
+{
+  "amountSats": 21000,
+  "bookingId": "bk_1",
+  "email": "[REDACTED]",
+  "invoice": "lnbcrt210000…(286 chars)",
+  "nested": {
+    "list": [
+      {
+        "preimage": "[REDACTED]",
+      },
+      "mail [REDACTED_EMAIL]",
+    ],
+    "secret": "[REDACTED]",
+  },
+  "note": "call me on [REDACTED_PHONE], P is [REDACTED_HEX], wallet [REDACTED_NWC_URL]",
+  "nwcUrl": "[REDACTED]",
+  "payeePubkey": "021111111111111111111111111111111111111111111111111111111111111111",
+  "paymentHash": "abababababababababababababababababababababababababababababababab",
+  "preimage": "[REDACTED]",
+  "travellerName": "[REDACTED]",
+}
+`;
