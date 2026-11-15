@@ -269,7 +269,8 @@ export class BookingService {
       return made.invoice;
     }
     if (!m.paymentHash) throw new ServiceError("no_approved_mandate");
-    const expirySecs = Math.max(60, Math.min(this.cfg.invoiceExpirySecs, Math.floor((b.tourStart - this.clock()) / 1000)));
+    if (this.clock() >= Math.min(b.tourStart, m.notAfter)) throw new ServiceError("lock_window_closed");
+    const expirySecs = Math.max(120, Math.min(this.cfg.invoiceExpirySecs, Math.floor((b.tourStart - this.clock()) / 1000)));
     const made = await this.backend.receiver(b.guideId).makeHoldInvoice({ amountSats: b.priceSats, paymentHash: m.paymentHash, description: t.title.en, expirySecs });
     this.save({ ...this.booking(bookingId), invoice: made.invoice });
     return made.invoice;

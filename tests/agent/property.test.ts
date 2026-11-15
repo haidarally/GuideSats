@@ -31,11 +31,12 @@ type Cmd =
   | { k: "reconcile" }
   | { k: "confirm" }
   | { k: "request"; b: number }
-  | { k: "swap"; b: number; plain: boolean };
+  | { k: "swap"; b: number; plain: boolean; sameHash: boolean };
 
+const W = <T>(weight: number, arbitrary: fc.Arbitrary<T>) => ({ weight, arbitrary });
 const cmd: fc.Arbitrary<Cmd> = fc.oneof(
-  fc.record({ k: fc.constant("legit" as const), b: fc.integer({ min: 0, max: 3 }) }),
-  fc.record({
+  W(3, fc.record({ k: fc.constant("legit" as const), b: fc.integer({ min: 0, max: 3 }) })),
+  W(3, fc.record({
     k: fc.constant("forged" as const),
     b: fc.integer({ min: 0, max: 3 }),
     guide: fc.integer({ min: 0, max: 3 }),
@@ -44,18 +45,20 @@ const cmd: fc.Arbitrary<Cmd> = fc.oneof(
     expiry: fc.constantFrom(30, 600, 3600),
     onLedger: fc.boolean(),
     plain: fc.boolean(), // a regular invoice made by the guide's wallet (plan B shape)
-  }),
-  fc.record({ k: fc.constant("replay" as const), b: fc.integer({ min: 0, max: 3 }), i: fc.nat() }),
-  fc.record({ k: fc.constant("garbage" as const), b: fc.integer({ min: 0, max: 3 }), s: fc.string({ maxLength: 40 }) }),
-  fc.record({ k: fc.constant("advance" as const), ms: fc.integer({ min: 0, max: 14 * HOUR }) }),
-  fc.record({ k: fc.constant("cyclone" as const), on: fc.boolean() }),
-  fc.record({ k: fc.constant("settle" as const), b: fc.integer({ min: 0, max: 2 }) }),
-  fc.record({ k: fc.constant("propose" as const), tour: fc.integer({ min: 0, max: 2 }) }),
-  fc.record({ k: fc.constant("reconcile" as const) }),
-  fc.record({ k: fc.constant("confirm" as const) }),
-  fc.record({ k: fc.constant("request" as const), b: fc.integer({ min: 0, max: 3 }) }),
+  })),
   // Invoice swap: the RIGHT guide's wallet, the RIGHT amount, but an invoice the app never asked for.
-  fc.record({ k: fc.constant("swap" as const), b: fc.integer({ min: 0, max: 3 }), plain: fc.boolean() }),
+  // With sameHash, a hold-mode swap is a perfectly valid invoice (right guide, amount and H): only the
+  // mandate's window and single use can stop it.
+  W(3, fc.record({ k: fc.constant("swap" as const), b: fc.integer({ min: 0, max: 3 }), plain: fc.boolean(), sameHash: fc.boolean() })),
+  W(2, fc.record({ k: fc.constant("request" as const), b: fc.integer({ min: 0, max: 3 }) })),
+  W(2, fc.record({ k: fc.constant("confirm" as const) })),
+  W(2, fc.record({ k: fc.constant("advance" as const), ms: fc.integer({ min: 0, max: 14 * HOUR }) })),
+  W(1, fc.record({ k: fc.constant("replay" as const), b: fc.integer({ min: 0, max: 3 }), i: fc.nat() })),
+  W(1, fc.record({ k: fc.constant("garbage" as const), b: fc.integer({ min: 0, max: 3 }), s: fc.string({ maxLength: 40 }) })),
+  W(1, fc.record({ k: fc.constant("cyclone" as const), on: fc.boolean() })),
+  W(1, fc.record({ k: fc.constant("settle" as const), b: fc.integer({ min: 0, max: 2 }) })),
+  W(1, fc.record({ k: fc.constant("propose" as const), tour: fc.integer({ min: 0, max: 2 }) })),
+  W(1, fc.record({ k: fc.constant("reconcile" as const) })),
 );
 
 describe("property: no tool-call sequence pays above the cap or outside the payee", () => {
@@ -64,7 +67,7 @@ describe("property: no tool-call sequence pays above the cap or outside the paye
     let refusals = 0;
     let plansBPaid = 0;
     await fc.assert(
-      fc.asyncProperty(fc.array(cmd, { maxLength: 30 }), async (cmds) => {
+      fc.asyncProperty(fc.array(cmd, { maxLength: 40 }), async (cmds) => {
         let now = T0;
         let feed: GdacsFeed = { features: [] };
         const w = await buildSimWorld({ clock: () => now, feed: () => feed, config: { acceptTimeoutMs: 50, pollMs: 5 } });
@@ -143,7 +146,7 @@ describe("property: no tool-call sequence pays above the cap or outside the paye
               try {
                 const inv = c.plain
                   ? (await r.makeInvoice({ amountSats: b.priceSats, description: "swap", expirySecs: 600 })).invoice
-                  : (await r.makeHoldInvoice({ amountSats: b.priceSats, paymentHash: rand(), description: "swap", expirySecs: 600 })).invoice;
+                  : (await r.makeHoldInvoice({ amountSats: b.priceSats, paymentHash: c.sameHash && b.paymentHash ? b.paymentHash : rand(), description: "swap", expirySecs: 600 })).invoice;
                 seen.push(inv);
                 await runTool(f, { tool: "pay_invoice", args: { bookingId: b.id, invoice: inv } });
               } catch {
@@ -186,17 +189,28 @@ describe("property: no tool-call sequence pays above the cap or outside the paye
         expect(w.ledger.balance("guide_lagoon")).toBeLessThanOrEqual(12_000);
         expect(w.ledger.balance("traveller")).toBeGreaterThanOrEqual(120_000 - 21_000 - 15_000 - 12_000);
         if (w.svc.booking(ids[3]!).state === "paid") plansBPaid++;
+        // Every payment left the traveller's wallet inside its mandate's time window.
+        for (const id of [ids[0]!, ids[1]!, ids[3]!]) {
+          const m = w.svc.mandate(id)!;
+          const hash = w.svc.booking(id).paymentHash;
+          for (const t of w.ledger.transactions("traveller").filter((x) => x.direction === "out" && x.paymentHash === hash)) {
+            expect(t.at).toBeGreaterThanOrEqual(m.notBefore);
+            expect(t.at).toBeLessThanOrEqual(m.notAfter);
+          }
+        }
         // Every hold that ever took the traveller's money (even if later refunded) matched a mandate.
         for (const h of w.ledger.allHolds().filter((x) => x.payer === "traveller")) {
           expect(caps[h.receiver]?.hash).toBe(h.paymentHash);
           expect(h.amountSats).toBeLessThanOrEqual(caps[h.receiver]!.cap);
         }
       }),
-      { numRuns: 200 },
+      // Fixed seed by default so CI is reproducible; FC_SEED=random (or a number) explores further.
+      { numRuns: Number(process.env.FC_RUNS ?? 500), seed: process.env.FC_SEED === "random" ? undefined : Number(process.env.FC_SEED ?? 20261116) },
     );
     // The property is not vacuous: real locks happened, and many attacks were refused.
     expect(runsWithALock).toBeGreaterThan(20);
     expect(refusals).toBeGreaterThan(100);
     expect(plansBPaid).toBeGreaterThan(0);
+    console.info(`property: ${runsWithALock} runs moved sats, ${plansBPaid} plan-B payments, ${refusals} refused attempts`);
   }, 120_000);
 });
