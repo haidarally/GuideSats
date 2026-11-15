@@ -58,6 +58,19 @@ describe("HTTP API", () => {
     expect(w().ledger.balance("traveller")).toBe(120_000);
   });
 
+  it("the cyclone source label says what the feed holds (a live feed is never called a synthetic replay)", async () => {
+    const { call, w } = await setup();
+    w().svc.setFeed(() => ({
+      features: [{ properties: { eventtype: "TC", eventid: 1, name: "FAR-AWAY", alertlevel: "Green", country: "Philippines", fromdate: "2026-11-19T00:00:00", todate: "2026-11-21T00:00:00" } }],
+    }));
+    let s = (await (await call("/api/state")).json()) as { cyclone: { active: boolean; source: string } };
+    expect(s.cyclone).toMatchObject({ active: false, source: "GDACS: no Orange or Red cyclone alert for Mauritius" });
+    await call("/api/demo/cyclone", { on: true });
+    s = (await (await call("/api/state")).json()) as { cyclone: { active: boolean; source: string } };
+    expect(s.cyclone.active).toBe(true);
+    expect(s.cyclone.source).toContain("SYNTHETIC REPLAY");
+  });
+
   it("the agent can propose by text but cannot approve", async () => {
     const { call } = await setup();
     const r = (await (await call("/api/agent/run", { text: "boat in the lagoon" })).json()) as { outcome: string };

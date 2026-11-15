@@ -52,6 +52,12 @@ function param(c: Context, name: string): string {
 
 const newestFirst = (txs: TxRecord[]) => [...txs].sort((a, b) => b.at - a.at).slice(0, 20);
 
+/** Where the banner's cyclone comes from. The event name carries "(SYNTHETIC REPLAY)" for the demo replay. */
+function cycloneSource(feed: { features: unknown[] }, event: { name: string } | undefined): string {
+  if (event) return `GDACS (${event.name})`;
+  return feed.features.length ? "GDACS: no Orange or Red cyclone alert for Mauritius" : "GDACS: no active alert";
+}
+
 /** Everything the PWA shows. Wallet data is read through the Lightning interface, so it is the same for SIM and NWC. */
 export async function snapshot(w: AppWorld) {
   const { svc } = w;
@@ -72,7 +78,7 @@ export async function snapshot(w: AppWorld) {
     backend: svc.backend.kind,
     network: svc.backend.network,
     now,
-    cyclone: { active: verdict.cancel, event: "event" in verdict ? verdict.event : undefined, source: feed.features.length ? "GDACS (BELAL-24, SYNTHETIC REPLAY)" : "GDACS fixture: no active alert" },
+    cyclone: { active: verdict.cancel, event: "event" in verdict ? verdict.event : undefined, source: cycloneSource(feed, "event" in verdict ? verdict.event : undefined) },
     traveller: {
       id: travellerId,
       balanceSats: await payer.getBalance(),
