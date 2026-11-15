@@ -1,0 +1,38 @@
+{
+  "_note": "Seed data for the local demo. Every person and business here is fictional.",
+  "traveller": { "id": "traveller", "walletSats": 120000, "label": "Demo traveller" },
+  "guides": [
+    { "id": "guide_lemorne", "displayName": "Kaya Treks", "area": "Le Morne", "languages": ["EN", "FR", "Kreol"], "walletSats": 0 },
+    { "id": "guide_chamarel", "displayName": "Sept Couleurs Guiding", "area": "Chamarel", "languages": ["FR", "Kreol"], "walletSats": 0 },
+    { "id": "guide_lagoon", "displayName": "Lagon Bleu Boats", "area": "Mahebourg", "languages": ["EN", "FR"], "walletSats": 0 }
+  ],
+  "tours": [
+    {
+      "id": "tour_lemorne",
+      "guideId": "guide_lemorne",
+      "title": { "en": "Le Morne Brabant sunrise hike", "fr": "Randonnée au lever du soleil au Morne Brabant" },
+      "meetingPoint": { "en": "Le Morne trailhead car park", "fr": "Parking du départ du sentier du Morne" },
+      "priceSats": 21000,
+      "startInHours": 8,
+      "durationHours": 4
+    },
+    {
+      "id": "tour_chamarel",
+      "guideId": "guide_chamarel",
+      "title": { "en": "Chamarel waterfall and seven-coloured earth walk", "fr": "Cascade de Chamarel et Terre des Sept Couleurs" },
+      "meetingPoint": { "en": "Chamarel village church", "fr": "Église du village de Chamarel" },
+      "priceSats": 15000,
+      "startInHours": 10,
+      "durationHours": 3
+    },
+    {
+      "id": "tour_lagoon",
+      "guideId": "guide_lagoon",
+      "title": { "en": "Blue Bay lagoon glass-bottom boat", "fr": "Bateau à fond de verre dans le lagon de Blue Bay" },
+      "meetingPoint": { "en": "Blue Bay public beach jetty", "fr": "Jetée de la plage publique de Blue Bay" },
+      "priceSats": 12000,
+      "startInHours": 6,
+      "durationHours": 2
+    }
+  ]
+}

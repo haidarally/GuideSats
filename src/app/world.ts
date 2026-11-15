@@ -1,0 +1,77 @@
+// Wires a complete SIMULATED world from the seed file: sim ledger, store, service.
+// Used by `npm run demo`, `npm run e2e:sim` and the tests.
+import { readFileSync } from "node:fs";
+import type { GdacsFeed } from "../domain/cyclone";
+import { SimBackend, SimLedger } from "../ln/sim";
+import { makeLogger, type Logger } from "../log/redact";
+import { Store } from "../store/db";
+import { BookingService, type Guide, type ServiceConfig, type Tour } from "./service";
+
+export interface Seed {
+  traveller: { id: string; walletSats: number; label: string };
+  guides: { id: string; displayName: string; area: string; languages: string[]; walletSats: number }[];
+  tours: { id: string; guideId: string; title: { en: string; fr: string }; meetingPoint: { en: string; fr: string }; priceSats: number; startInHours: number; durationHours: number }[];
+}
+
+export function loadSeed(): Seed {
+  return JSON.parse(readFileSync(new URL("../../fixtures/seed.json", import.meta.url), "utf8")) as Seed;
+}
+
+export interface SimWorldOptions {
+  clock?: () => number;
+  seed?: Seed;
+  feed?: () => GdacsFeed;
+  log?: Logger;
+  dbPath?: string;
+  holdMaxSecs?: number;
+  config?: Partial<ServiceConfig>;
+}
+
+export async function buildSimWorld(opts: SimWorldOptions = {}) {
+  let offset = 0;
+  const base = opts.clock ?? Date.now;
+  const clock = () => base() + offset;
+  const seed = opts.seed ?? loadSeed();
+  const balances: Record<string, number> = { [seed.traveller.id]: seed.traveller.walletSats };
+  for (const g of seed.guides) balances[g.id] = g.walletSats;
+  const ledger = new SimLedger({ clock, balances, holdMaxSecs: opts.holdMaxSecs });
+  const backend = new SimBackend(ledger);
+  const guides: Guide[] = [];
+  for (const g of seed.guides) {
+    guides.push({ id: g.id, displayName: g.displayName, area: g.area, languages: g.languages, payeePubkey: (await backend.receiver(g.id).getInfo()).pubkey });
+  }
+  const t0 = clock();
+  const tours: Tour[] = seed.tours.map((t) => ({
+    id: t.id,
+    guideId: t.guideId,
+    title: t.title,
+    meetingPoint: t.meetingPoint,
+    priceSats: t.priceSats,
+    startAt: Math.floor((t0 + t.startInHours * 3_600_000) / 60_000) * 60_000,
+    durationHours: t.durationHours,
+  }));
+  const store = new Store(opts.dbPath ?? ":memory:");
+  const log = opts.log ?? makeLogger(() => {});
+  const svc = new BookingService(store, backend, clock, opts.feed ?? (() => ({ type: "FeatureCollection", features: [] })), log, tours, guides, {
+    travellerWalletId: seed.traveller.id,
+    lockLeadHours: 12,
+    invoiceExpirySecs: 3600,
+    acceptTimeoutMs: 2000,
+    pollMs: 20,
+    ...opts.config,
+  });
+  return {
+    svc,
+    ledger,
+    backend,
+    store,
+    seed,
+    clock,
+    /** Move the simulated clock forward (the demo's "skip ahead" button, and the tests). */
+    advance: (ms: number) => {
+      offset += ms;
+    },
+  };
+}
+
+export type SimWorld = Awaited<ReturnType<typeof buildSimWorld>>;

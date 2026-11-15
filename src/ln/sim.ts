@@ -50,7 +50,7 @@ export class SimLedger {
   readonly holdMaxSecs: number;
   private balances = new Map<string, number>();
   private budgets = new Map<string, Budget>();
-  private holds = new Map<string, Hold>();
+  private holds = new Map<string, Hold>(); // key: `${receiver}:${paymentHash}`
   private tx = new Map<string, TxRecord[]>();
 
   constructor(opts: SimOptions) {
@@ -70,8 +70,12 @@ export class SimLedger {
   transactions(id: string): TxRecord[] {
     return [...(this.tx.get(id) ?? [])];
   }
-  holdState(hash: string): HoldState | null {
-    return this.holds.get(hash)?.state ?? null;
+  holdState(receiver: string, hash: string): HoldState | null {
+    return this.holds.get(`${receiver}:${hash}`)?.state ?? null;
+  }
+  /** Every hold the ledger knows, for invariant checks in tests. */
+  allHolds(): { receiver: string; payer: string | null; amountSats: number; paymentHash: string; state: HoldState }[] {
+    return [...this.holds.values()].map((h) => ({ receiver: h.receiver, payer: h.payer, amountSats: h.amountSats, paymentHash: h.paymentHash, state: h.state }));
   }
   /** Sum of every wallet balance plus funds held in flight: must never change. */
   totalSats(): number {
@@ -91,7 +95,8 @@ export class SimLedger {
   }
 
   makeHold(receiver: string, req: HoldInvoiceRequest): MadeInvoice {
-    if (this.holds.has(req.paymentHash)) throw new Error("hold invoice already exists for this hash");
+    const key = `${receiver}:${req.paymentHash}`;
+    if (this.holds.has(key)) throw new Error("hold invoice already exists for this hash");
     const now = this.clock();
     const invoice = encodeSimInvoice({
       network: "regtest",
@@ -103,7 +108,7 @@ export class SimLedger {
       payeeNodeId: simNodeId(receiver),
     });
     const expiresAt = (Math.floor(now / 1000) + req.expirySecs) * 1000;
-    this.holds.set(req.paymentHash, {
+    this.holds.set(key, {
       receiver,
       payer: null,
       amountSats: req.amountSats,
@@ -127,8 +132,8 @@ export class SimLedger {
     } catch {
       return Promise.resolve({ status: "failed", error: "undecodable invoice" });
     }
-    const h = this.holds.get(hash);
-    if (!h || h.invoice !== invoice) return Promise.resolve({ status: "failed", error: "unknown invoice" });
+    const h = [...this.holds.values()].find((x) => x.paymentHash === hash && x.invoice === invoice);
+    if (!h) return Promise.resolve({ status: "failed", error: "unknown invoice" });
     if (h.state !== "open") return Promise.resolve({ status: "failed", error: `invoice is ${h.state}` });
     if (h.receiver === payer) return Promise.resolve({ status: "failed", error: "self-payment" });
     const bal = this.balance(payer);
@@ -151,8 +156,8 @@ export class SimLedger {
     this.tick();
     if (!/^[0-9a-f]{64}$/.test(preimage)) throw new Error("preimage must be 32-byte hex");
     const hash = bytesToHex(sha256(hexToBytes(preimage)));
-    const h = this.holds.get(hash);
-    if (!h || h.receiver !== receiver) throw new Error("no hold invoice for this preimage");
+    const h = this.holds.get(`${receiver}:${hash}`);
+    if (!h) throw new Error("no hold invoice for this preimage");
     if (h.state !== "accepted") throw new Error(`cannot settle a hold in state ${h.state}`);
     h.state = "settled";
     this.balances.set(receiver, this.balance(receiver) + h.amountSats);
@@ -162,8 +167,8 @@ export class SimLedger {
   }
 
   cancel(receiver: string, hash: string): void {
-    const h = this.holds.get(hash);
-    if (!h || h.receiver !== receiver) throw new Error("no hold invoice for this hash");
+    const h = this.holds.get(`${receiver}:${hash}`);
+    if (!h) throw new Error("no hold invoice for this hash");
     if (h.state === "accepted") this.refund(h, "cancelled");
     else if (h.state === "open") {
       h.state = "cancelled";
@@ -196,8 +201,8 @@ export class SimLedger {
 
   lookup(receiver: string, hash: string) {
     this.tick();
-    const h = this.holds.get(hash);
-    if (!h || h.receiver !== receiver) throw new Error("no hold invoice for this hash");
+    const h = this.holds.get(`${receiver}:${hash}`);
+    if (!h) throw new Error("no hold invoice for this hash");
     return { state: h.state, amountSats: h.amountSats, settleDeadline: h.settleDeadline ?? undefined };
   }
 }
