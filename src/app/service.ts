@@ -247,7 +247,7 @@ export class BookingService {
           this.store.audit(now, "refunded_cyclone", { bookingId: b.id, amountSats: b.priceSats, eventid });
           this.save(applyEvent(this.booking(b.id), "CYCLONE_CANCEL", now));
         } else if (m?.status === "consuming") {
-          if (b.mode === "hold" && b.paymentHash && b.invoice) {
+          if (b.mode === "hold" && b.paymentHash) {
             // A lock is in flight, or its outcome is unknown. Cancel the hold invoice at the guide's wallet:
             // an accepted hold is refunded at once, and a payment that has not landed yet can no longer land.
             await this.backend.receiver(b.guideId).cancelHoldInvoice(b.paymentHash);

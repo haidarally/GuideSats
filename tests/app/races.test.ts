@@ -173,6 +173,32 @@ describe("races between an in-flight payment and the watcher or the traveller", 
     expect(w0.svc.booking(booking.id).state).toBe("skipped_cyclone");
   });
 
+  it("hold: an UNKNOWN lock on an invoice the app never requested (same H) is still cancelled by a cyclone", async () => {
+    let feed: GdacsFeed = { features: [] };
+    let now = T0;
+    const w0 = await buildSimWorld({ clock: () => now, feed: () => feed, config: { acceptTimeoutMs: 30, pollMs: 5 } });
+    const be = w0.backend;
+    (w0.svc as unknown as { backend: LightningBackend }).backend = {
+      kind: be.kind,
+      simulated: be.simulated,
+      network: be.network,
+      payeeProof: be.payeeProof,
+      payer: (id) => be.payer(id),
+      receiver: (id) => ({ ...be.receiver(id), lookupInvoice: async () => ({ state: "open" as const, amountSats: 0 }) }),
+    };
+    const { booking } = w0.svc.proposeBooking("tour_lemorne");
+    const { h } = pair();
+    w0.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: h, at: now });
+    // The agent skips request_invoice and pays a valid hold invoice for H made straight at the guide's wallet.
+    const inv = (await be.receiver("guide_lemorne").makeHoldInvoice({ amountSats: 21_000, paymentHash: h, description: "swap", expirySecs: 600 })).invoice;
+    expect(await w0.svc.payWithinMandate(booking.id, inv)).toEqual({ ok: false, reason: "payment_unknown_needs_reconcile" });
+    expect(w0.svc.booking(booking.id).invoice).toBeNull();
+    feed = cyclone();
+    await w0.svc.applyCycloneRule();
+    expect(w0.ledger.balance("traveller")).toBe(120_000);
+    expect(w0.svc.booking(booking.id).state).toBe("skipped_cyclone");
+  });
+
   it("one failing hold cancel does not stop the cyclone rule refunding the other bookings", async () => {
     let feed: GdacsFeed = { features: [] };
     const w = await world({ feed: () => feed });
