@@ -1,0 +1,47 @@
+// Review (adversarial pass): the hold-mode mandate must not open before lockLeadHours ahead of
+// the tour. An earlier lock would sit in an HTLC longer than the hold can live (settle_deadline),
+// so it would time out before the meeting and the guide could never be paid.
+import { describe, it, expect } from "vitest";
+import { randomBytes } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { buildSimWorld, loadSeed } from "../../src/app/world";
+
+const T0 = Date.parse("2026-11-20T02:00:00Z");
+const HOUR = 3_600_000;
+const pair = () => {
+  const p = bytesToHex(randomBytes(32));
+  return { p, h: bytesToHex(sha256(hexToBytes(p))) };
+};
+
+describe("the lock window", () => {
+  it("the agent cannot lock days ahead: the mandate opens lockLeadHours before the tour", async () => {
+    const seed = loadSeed();
+    seed.tours = seed.tours.map((t) => (t.id === "tour_lemorne" ? { ...t, startInHours: 72 } : t));
+    let now = T0;
+    const w = await buildSimWorld({ clock: () => now, seed });
+    const { booking, mandate } = w.svc.proposeBooking("tour_lemorne");
+    expect(mandate.notBefore).toBe(booking.tourStart - 12 * HOUR);
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: pair().h, at: w.clock() });
+    const inv = await w.svc.requestInvoice(booking.id);
+    expect(await w.svc.payWithinMandate(booking.id, inv)).toEqual({ ok: false, reason: "mandate_too_early" });
+    expect(w.ledger.balance("traveller")).toBe(120_000);
+  });
+
+  it("inside the window the agent locks as before, and the hold outlives the wait until the tour", async () => {
+    const seed = loadSeed();
+    seed.tours = seed.tours.map((t) => (t.id === "tour_lemorne" ? { ...t, startInHours: 72 } : t));
+    let now = T0;
+    const w = await buildSimWorld({ clock: () => now, seed, config: { invoiceExpirySecs: 3600 } });
+    const { booking } = w.svc.proposeBooking("tour_lemorne");
+    const { p, h } = pair();
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: h, at: w.clock() });
+    now = booking.tourStart - 11 * HOUR; // the window opened an hour ago
+    const inv = await w.svc.requestInvoice(booking.id);
+    expect(await w.svc.payWithinMandate(booking.id, inv)).toEqual({ ok: true, state: "locked", amountSats: 21_000 });
+    now = booking.tourStart; // the meeting: the 12 h hold has not timed out
+    expect(await w.svc.reconcileHolds()).toEqual([]);
+    await w.svc.settleWithPreimage(booking.id, p);
+    expect(w.ledger.balance("guide_lemorne")).toBe(21_000);
+  });
+});

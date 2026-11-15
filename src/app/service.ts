@@ -157,7 +157,9 @@ export class BookingService {
       bookingId: booking.id,
       capSats: t.priceSats,
       payeePubkey: g.payeePubkey,
-      notBefore: mode === "hold" ? Math.min(now, t.startAt - this.cfg.lockLeadHours * 3_600_000) : t.startAt,
+      // Hold mode: never earlier than lockLeadHours before the tour, so an accepted hold does not time out
+      // (settle_deadline) before the meeting. (Review fix: this was min(now, ...), which let the agent lock at once.)
+      notBefore: mode === "hold" ? t.startAt - this.cfg.lockLeadHours * 3_600_000 : t.startAt,
       notAfter: mode === "hold" ? t.startAt : tourEnd + 48 * 3_600_000,
       requireHash: mode === "hold",
     });
