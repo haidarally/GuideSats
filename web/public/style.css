@@ -57,3 +57,4 @@ input, select { font: inherit; width: 100%; padding: 10px; border: 1px solid var
 .demo { margin-top: 18px; border-style: dashed; }
 .loading { padding: 40px 0; text-align: center; color: var(--muted); }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.small { font-size: .8rem; margin-top: 4px; }

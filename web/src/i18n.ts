@@ -62,6 +62,13 @@ const en = {
   } as Record<string, string>,
   tx: { pending: "waiting", held: "held", settled: "settled", refunded: "refunded", failed: "failed" } as Record<string, string>,
   error: "Error",
+  bookAfter: "Pay after the tour",
+  modeHold: "Sats locked before the tour (hold invoice)",
+  modeAfter: "Plan B: paid after the tour, once you confirm it happened",
+  approvePlanB: "Approve mandate",
+  confirmTour: "The tour happened: confirm",
+  askAgentPay: "Ask the agent to pay the guide",
+  waitTour: "You can confirm once the tour has started.",
 };
 
 const fr: typeof en = {
@@ -125,6 +132,13 @@ const fr: typeof en = {
   },
   tx: { pending: "en attente", held: "bloqué", settled: "réglé", refunded: "remboursé", failed: "échoué" },
   error: "Erreur",
+  bookAfter: "Payer après l'excursion",
+  modeHold: "Sats bloqués avant l'excursion (facture « hold »)",
+  modeAfter: "Plan B : payé après l'excursion, une fois que vous la confirmez",
+  approvePlanB: "Approuver le mandat",
+  confirmTour: "L'excursion a eu lieu : confirmer",
+  askAgentPay: "Demander à l'agent de payer le guide",
+  waitTour: "Vous pourrez confirmer une fois l'excursion commencée.",
 };
 
 export const STRINGS = { en, fr };

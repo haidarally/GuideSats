@@ -32,6 +32,7 @@ function BookingCard({ b, s, t, lang, onError, refresh }: Props & { b: Booking }
         {t.starts}: {fmtTime(b.tourStart, lang)} · {t.meet}: {tour.meetingPoint[lang]}
       </div>
       <div class={`pill pill-${b.state}`}>{t.state[b.state] ?? b.state}</div>
+      <div class="muted small">{b.mode === "hold" ? t.modeHold : t.modeAfter}</div>
       {b.mandate && (b.state === "proposed" || b.state === "mandated") && (
         <div class="mandate">
           <div class="label">{t.mandate}</div>
@@ -51,12 +52,29 @@ function BookingCard({ b, s, t, lang, onError, refresh }: Props & { b: Booking }
         <>
           <p class="hint">{t.approveHint}</p>
           <div class="actions">
-            <button data-testid="approve" onClick={act(async () => post(`/api/traveller/bookings/${b.id}/approve`, { paymentHash: await makeSecret(b.id) }))}>{t.approve}</button>
+            <button
+              data-testid="approve"
+              onClick={act(async () => post(`/api/traveller/bookings/${b.id}/approve`, b.mode === "hold" ? { paymentHash: await makeSecret(b.id) } : {}))}
+            >
+              {t.approve}
+            </button>
             <button class="ghost" onClick={act(() => post(`/api/traveller/bookings/${b.id}/cancel`))}>{t.cancel}</button>
           </div>
         </>
       )}
-      {b.state === "mandated" && (
+      {b.state === "mandated" && b.mode === "on_completion" && (
+        <div class="actions">
+          {b.confirmedAt ? (
+            <button data-testid="ask-agent-pay" onClick={act(() => post("/api/agent/run", { bookingId: b.id }))}>{t.askAgentPay}</button>
+          ) : s.now >= b.tourStart ? (
+            <button data-testid="confirm-tour" onClick={act(() => post(`/api/traveller/bookings/${b.id}/confirm`))}>{t.confirmTour}</button>
+          ) : (
+            <p class="hint">{t.waitTour}</p>
+          )}
+          <button class="ghost" onClick={act(() => post(`/api/traveller/bookings/${b.id}/cancel`))}>{t.cancel}</button>
+        </div>
+      )}
+      {b.state === "mandated" && b.mode === "hold" && (
         <div class="actions">
           <button data-testid="ask-agent" onClick={act(() => post("/api/agent/run", { bookingId: b.id }))}>{t.askAgentLock}</button>
           <button class="ghost" onClick={act(() => post(`/api/traveller/bookings/${b.id}/cancel`))}>{t.cancel}</button>
@@ -94,6 +112,9 @@ export function Traveller(props: Props) {
             <div class="muted">{s.guides.find((g) => g.id === tour.guideId)?.displayName} · {fmtTime(tour.startAt, lang)} · {tour.durationHours} h</div>
             <div class="actions">
               <button data-testid={`book-${tour.id}`} onClick={() => post("/api/traveller/bookings", { tourId: tour.id }).then(refresh, onError)}>{t.book}</button>
+              <button class="ghost" data-testid={`book-after-${tour.id}`} onClick={() => post("/api/traveller/bookings", { tourId: tour.id, mode: "on_completion" }).then(refresh, onError)}>
+                {t.bookAfter}
+              </button>
             </div>
           </li>
         ))}

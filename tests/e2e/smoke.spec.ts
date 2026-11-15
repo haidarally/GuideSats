@@ -45,3 +45,19 @@ test("cyclone alert refunds a locked booking", async ({ page, request }) => {
   await page.getByTestId("tab-traveller").click();
   await expect(page.getByTestId("traveller-balance")).toContainText("120 000");
 });
+
+test("plan B: book after, approve, skip past the tour, confirm, agent pays", async ({ page, request }) => {
+  await request.post("/api/demo/reset", { data: {} });
+  await page.goto("/");
+  await page.getByTestId("book-after-tour_lagoon").click();
+  await page.getByTestId("approve").click();
+  await page.getByTestId("tab-agent").click();
+  await page.getByRole("button", { name: /13 h/ }).click();
+  await page.getByTestId("tab-traveller").click();
+  await page.getByTestId("confirm-tour").click();
+  await page.getByTestId("ask-agent-pay").click();
+  await expect(page.getByTestId("traveller-balance")).toContainText("108 000");
+  await page.getByTestId("tab-guide").click();
+  await page.locator("#guide-select").selectOption("guide_lagoon");
+  await expect(page.getByTestId("guide-balance")).toContainText("12 000");
+});

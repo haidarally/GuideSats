@@ -1,4 +1,4 @@
-// `npm run e2e:sim`: the three demo scenarios, end to end, on the SIMULATED backend.
+// `npm run e2e:sim`: the four demo scenarios, end to end, on the SIMULATED backend.
 // No network, no keys. Exits non-zero if any scenario does not end as expected.
 import { randomBytes } from "node:crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -72,6 +72,21 @@ out("GuideSats end-to-end on the SIMULATED Lightning backend (regtest, in-proces
   expect(`other payee refused (${r2.ok ? "paid!" : r2.error})`, !r2.ok);
   expect(`no approve tool (${r3.ok ? "exists!" : r3.error})`, !r3.ok);
   expect(`traveller still has ${w.ledger.balance("traveller")} sats`, w.ledger.balance("traveller") === 120_000);
+}
+
+{
+  out("\n4. Plan B (wallets without hold invoices): pay after the tour, once the traveller confirms it");
+  let now = Date.now();
+  const w = await buildSimWorld({ clock: () => now });
+  const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
+  w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: now });
+  const early = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
+  now += 9 * 3_600_000; // the 2 h lagoon tour started 6 h after booking
+  w.svc.confirmTourHappened(booking.id);
+  const paid = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
+  expect(`agent waits before confirmation (${early.outcome})`, early.outcome === "waiting_for_traveller_to_confirm_the_tour");
+  expect(`agent pays after confirmation (${paid.outcome})`, paid.outcome === "paid");
+  expect(`guide received ${w.ledger.balance("guide_lagoon")} sats`, w.ledger.balance("guide_lagoon") === 12_000);
 }
 
 out(failed === 0 ? "\nAll scenarios passed (SIMULATED)." : `\n${failed} check(s) failed.`);

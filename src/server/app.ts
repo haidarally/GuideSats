@@ -123,18 +123,31 @@ export function createApp(ctx: ServerContext) {
     const b = await json(c);
     const tourId = typeof b.tourId === "string" && ID.test(b.tourId) ? b.tourId : null;
     if (!tourId) throw new BadRequest("bad tourId");
-    const { booking, mandate } = ctx.world().svc.proposeBooking(tourId);
+    const mode = b.mode === undefined || b.mode === "hold" ? "hold" : b.mode === "on_completion" ? "on_completion" : null;
+    if (!mode) throw new BadRequest("mode must be hold or on_completion");
+    const { booking, mandate } = ctx.world().svc.proposeBooking(tourId, mode);
     return c.json({ bookingId: booking.id, capSats: mandate.capSats, payeePubkey: mandate.payeePubkey, notBefore: mandate.notBefore, notAfter: mandate.notAfter });
   });
 
   app.post("/api/traveller/bookings/:id/approve", async (c) => {
     const id = param(c, "id");
     const b = await json(c);
-    const h = typeof b.paymentHash === "string" ? b.paymentHash.toLowerCase() : "";
-    if (!HEX32.test(h)) throw new BadRequest("paymentHash must be 32-byte hex (SHA-256 of the secret kept on this phone)");
+    if (b.paymentHash !== undefined && b.paymentHash !== null && (typeof b.paymentHash !== "string" || !HEX32.test(b.paymentHash.toLowerCase()))) {
+      throw new BadRequest("paymentHash must be 32-byte hex (SHA-256 of the secret kept on this phone)");
+    }
     const svc = ctx.world().svc;
+    let h: string | null = null;
+    if (svc.booking(id).mode === "hold") {
+      h = typeof b.paymentHash === "string" ? b.paymentHash.toLowerCase() : "";
+      if (!HEX32.test(h)) throw new BadRequest("paymentHash must be 32-byte hex (SHA-256 of the secret kept on this phone)");
+    } else if (b.paymentHash !== undefined && b.paymentHash !== null) throw new BadRequest("plan B takes no paymentHash");
     const m = svc.approveMandate(id, { actor: "traveller", paymentHash: h, at: svc.now() });
     return c.json({ ok: true, mandate: { status: m.status, capSats: m.capSats } });
+  });
+
+  app.post("/api/traveller/bookings/:id/confirm", async (c) => {
+    const b = ctx.world().svc.confirmTourHappened(param(c, "id"));
+    return c.json({ ok: true, state: b.state, confirmed: true });
   });
 
   app.post("/api/traveller/bookings/:id/cancel", async (c) => {

@@ -84,4 +84,21 @@ describe("HTTP API", () => {
     expect(r.headers.get("content-security-policy")).toContain("default-src 'self'");
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
   });
+
+  it("plan B over HTTP: book after, approve without a hash, confirm, agent pays", async () => {
+    let now = T0;
+    let w: SimWorld = await buildSimWorld({ clock: () => now });
+    const app = createApp({ world: () => w, reset: async () => void (w = await buildSimWorld({ clock: () => now })), allowedHosts: [HOST] });
+    const post = (path: string, body: unknown) => app.request(`http://${HOST}${path}`, { method: "POST", headers: { host: HOST, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const { bookingId } = (await (await post("/api/traveller/bookings", { tourId: "tour_lagoon", mode: "on_completion" })).json()) as { bookingId: string };
+    expect((await post(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: "ab".repeat(32) })).status).toBe(400);
+    expect((await post(`/api/traveller/bookings/${bookingId}/approve`, {})).status).toBe(200);
+    expect((await post(`/api/traveller/bookings/${bookingId}/confirm`, {})).status).toBe(409); // tour not started
+    now += 9 * 3_600_000;
+    expect((await post(`/api/traveller/bookings/${bookingId}/confirm`, {})).status).toBe(200);
+    const run = (await (await post("/api/agent/run", { bookingId })).json()) as { outcome: string };
+    expect(run.outcome).toBe("paid");
+    expect(w.ledger.balance("guide_lagoon")).toBe(12_000);
+    expect((await post("/api/traveller/bookings", { tourId: "tour_lagoon", mode: "free" })).status).toBe(400);
+  });
 });

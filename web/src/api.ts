@@ -5,6 +5,7 @@ export interface Tour { id: string; guideId: string; title: { en: string; fr: st
 export interface Guide { id: string; displayName: string; area: string; languages: string[]; payeePubkey: string; balanceSats: number; transactions: Tx[] }
 export interface Booking {
   id: string; tourId: string; guideId: string; priceSats: number; tourStart: number; tourEnd: number; state: string; paymentHash: string | null; invoice: string | null;
+  mode: "hold" | "on_completion"; confirmedAt?: number | null;
   mandate: { status: string; capSats: number; payeePubkey: string; notBefore: number; notAfter: number } | null;
 }
 export interface State {
