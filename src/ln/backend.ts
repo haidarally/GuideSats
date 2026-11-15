@@ -41,7 +41,11 @@ export interface MadeInvoice {
   expiresAt: number; // ms epoch
 }
 
-export type PayOutcome = { status: "settled"; preimage?: string } | { status: "refunded" } | { status: "failed"; error: string };
+export type PayOutcome =
+  | { status: "settled"; preimage?: string }
+  | { status: "refunded" }
+  | { status: "failed"; error: string } // definite: nothing left the wallet (or it came back)
+  | { status: "unknown"; error: string }; // e.g. a reply timeout: the payment may still be in flight
 
 export interface PayerWallet {
   getInfo(): Promise<WalletInfo>;
