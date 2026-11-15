@@ -9,6 +9,7 @@ import { applyEvent, isTerminal, type Booking, type PaymentMode } from "../domai
 import { cycloneVerdict, type CycloneVerdict, type GdacsFeed } from "../domain/cyclone";
 import { approveMandate, draftMandate, revokeMandate, type Mandate, type TravellerApproval } from "../domain/mandate";
 import type { LightningBackend, PayOutcome } from "../ln/backend";
+import { invoiceExpiresAt } from "../ln/invoiceCheck";
 import type { Logger } from "../log/redact";
 import type { Store } from "../store/db";
 import { payWithinMandate, type PayResult } from "./payments";
@@ -299,7 +300,10 @@ export class BookingService {
     if (b.state !== "mandated") throw new ServiceError(`not_mandated:${b.state}`);
     const m = this.store.mandateForBooking(bookingId);
     if (!m || m.status !== "approved") throw new ServiceError("no_approved_mandate");
-    if (b.invoice) return b.invoice;
+    // A cached invoice is reused while it is still payable. Plan B asks the guide's wallet for a fresh one
+    // once it has expired (e.g. a failed payment retried later). A hold invoice is bound to the traveller's
+    // H and cannot be re-made, so hold mode keeps returning it (the invoice check then refuses it as expired).
+    if (b.invoice && (b.mode === "hold" || (invoiceExpiresAt(b.invoice) ?? 0) - this.clock() > 60_000)) return b.invoice;
     const t = this.tour(b.tourId);
     if (b.mode === "on_completion") {
       if (!b.confirmedAt) throw new ServiceError("not_confirmed_by_traveller");
@@ -308,6 +312,9 @@ export class BookingService {
       return made.invoice;
     }
     if (!m.paymentHash) throw new ServiceError("no_approved_mandate");
+    // Not before the window opens: the hold invoice (expiry <= invoiceExpirySecs) would expire before
+    // the agent may pay it, and a hold invoice for H cannot be made twice.
+    if (this.clock() < m.notBefore) throw new ServiceError("lock_window_not_open");
     if (this.clock() >= Math.min(b.tourStart, m.notAfter)) throw new ServiceError("lock_window_closed");
     const expirySecs = Math.max(120, Math.min(this.cfg.invoiceExpirySecs, Math.floor((b.tourStart - this.clock()) / 1000)));
     const made = await this.backend.receiver(b.guideId).makeHoldInvoice({ amountSats: b.priceSats, paymentHash: m.paymentHash, description: t.title.en, expirySecs });

@@ -22,8 +22,12 @@ describe("the lock window", () => {
     const w = await buildSimWorld({ clock: () => now, seed });
     const { booking, mandate } = w.svc.proposeBooking("tour_lemorne");
     expect(mandate.notBefore).toBe(booking.tourStart - 12 * HOUR);
-    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: pair().h, at: w.clock() });
-    const inv = await w.svc.requestInvoice(booking.id);
+    const { h } = pair();
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: h, at: w.clock() });
+    // No hold invoice before the window (it would expire before the agent may pay it, and H cannot be reused)...
+    await expect(w.svc.requestInvoice(booking.id)).rejects.toThrow("lock_window_not_open");
+    // ...and a hold invoice obtained some other way is refused by the mandate.
+    const inv = (await w.backend.receiver("guide_lemorne").makeHoldInvoice({ amountSats: 21_000, paymentHash: h, description: "early", expirySecs: 600 })).invoice;
     expect(await w.svc.payWithinMandate(booking.id, inv)).toEqual({ ok: false, reason: "mandate_too_early" });
     expect(w.ledger.balance("traveller")).toBe(120_000);
   });
@@ -43,5 +47,22 @@ describe("the lock window", () => {
     expect(await w.svc.reconcileHolds()).toEqual([]);
     await w.svc.settleWithPreimage(booking.id, p);
     expect(w.ledger.balance("guide_lemorne")).toBe(21_000);
+  });
+
+  it("plan B: an expired cached invoice is replaced by a fresh one from the guide's wallet", async () => {
+    let now = T0;
+    const w = await buildSimWorld({ clock: () => now });
+    const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: now });
+    now += 9 * HOUR;
+    w.svc.confirmTourHappened(booking.id);
+    const first = await w.svc.requestInvoice(booking.id);
+    expect(await w.svc.requestInvoice(booking.id)).toBe(first); // still payable: reused
+    now += 11 * 60_000; // plan B invoices live 10 minutes
+    const second = await w.svc.requestInvoice(booking.id);
+    expect(second).not.toBe(first);
+    expect(await w.svc.payWithinMandate(booking.id, first)).toMatchObject({ ok: false }); // the old one is dead
+    expect(await w.svc.payWithinMandate(booking.id, second)).toEqual({ ok: true, state: "paid", amountSats: 12_000 });
+    expect(w.ledger.balance("guide_lagoon")).toBe(12_000);
   });
 });

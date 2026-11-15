@@ -99,3 +99,16 @@ export function checkInvoice(paymentRequest: string, exp: InvoiceExpectation): I
     invoice: { network: exp.network, amountSats: exp.amountSats, paymentHash: hash.toLowerCase(), payeePubkey: payee, timestamp, expiresAt: expiresAtSec * 1000, description },
   };
 }
+
+/** When a BOLT11 invoice expires (ms epoch), or null if it does not decode. No other check is made. */
+export function invoiceExpiresAt(paymentRequest: string): number | null {
+  try {
+    const sections = decode(paymentRequest.trim()).sections as Section[];
+    const ts = sections.find((s) => s.name === "timestamp")?.value;
+    const rel = sections.find((s) => s.name === "expiry")?.value;
+    if (typeof ts !== "number") return null;
+    return (ts + (typeof rel === "number" ? rel : 3600)) * 1000;
+  } catch {
+    return null;
+  }
+}
