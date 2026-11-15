@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { fmtSats, fmtTime, post, short, type State } from "./api";
 import type { Lang, Strings } from "./i18n";
+import { Scan } from "./Scan";
 
 interface Props { s: State; t: Strings; lang: Lang; onError: (e: unknown) => void; refresh: () => void }
 
@@ -39,7 +40,7 @@ export function Guide({ s, t, lang, onError, refresh }: Props) {
                 {b.invoice && <div class="muted mono">{short(b.invoice, 14)}</div>}
                 {b.state === "locked" && (
                   <form
-                    class="actions"
+                    class="actions wrap"
                     onSubmit={(e) => {
                       e.preventDefault();
                       post(`/api/guide/bookings/${b.id}/settle`, { preimage: (codes[b.id] ?? "").replace(/\s+/g, "") }).then(refresh, onError);
@@ -55,6 +56,7 @@ export function Guide({ s, t, lang, onError, refresh }: Props) {
                       onInput={(e) => setCodes({ ...codes, [b.id]: (e.target as HTMLInputElement).value })}
                     />
                     <button type="submit" data-testid="settle">{t.settle}</button>
+                    <Scan label={t.scan} onCode={(code) => setCodes({ ...codes, [b.id]: code })} />
                   </form>
                 )}
               </li>

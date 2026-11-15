@@ -69,6 +69,7 @@ const en = {
   confirmTour: "The tour happened: confirm",
   askAgentPay: "Ask the agent to pay the guide",
   waitTour: "You can confirm once the tour has started.",
+  scan: "Scan QR",
 };
 
 const fr: typeof en = {
@@ -139,6 +140,7 @@ const fr: typeof en = {
   confirmTour: "L'excursion a eu lieu : confirmer",
   askAgentPay: "Demander à l'agent de payer le guide",
   waitTour: "Vous pourrez confirmer une fois l'excursion commencée.",
+  scan: "Scanner le QR",
 };
 
 export const STRINGS = { en, fr };

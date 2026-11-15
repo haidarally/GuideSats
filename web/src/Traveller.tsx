@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { fmtSats, fmtTime, makeSecret, post, readSecret, short, type Booking, type State } from "./api";
 import type { Lang, Strings } from "./i18n";
+import { Qr } from "./Qr";
 
 interface Props { s: State; t: Strings; lang: Lang; onError: (e: unknown) => void; refresh: () => void }
 
@@ -11,6 +12,7 @@ function MeetingCode({ bookingId, t }: { bookingId: string; t: Strings }) {
   return (
     <div class="code">
       <div class="label">{t.meetingCode}</div>
+      <Qr value={p} label={t.meetingCode} />
       <code data-testid="meeting-code">{p.match(/.{1,8}/g)!.join(" ")}</code>
       <button class="ghost" onClick={() => navigator.clipboard?.writeText(p).then(() => setCopied(true))}>
         {copied ? t.copied : t.copy}
