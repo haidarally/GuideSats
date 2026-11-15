@@ -15,7 +15,7 @@
     "demo": "node scripts/build-web.mjs && tsx src/server/main.ts",
     "e2e:sim": "tsx scripts/e2e-sim.ts",
     "e2e:nwc": "tsx scripts/e2e-nwc.ts",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test && npm run e2e:sim"
   },
   "dependencies": {
     "@getalby/sdk": "9.0.0",
