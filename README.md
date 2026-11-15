@@ -23,8 +23,8 @@ The happy path takes about 30 seconds:
 1. **Traveller wallet**: pick *Le Morne Brabant sunrise hike*, then **Book**. The draft mandate shows the cap, the guide's key, the time window and "one payment only".
 2. **Approve mandate**. Your browser makes a secret P, keeps it, and sends only H = SHA-256(P).
 3. **Ask the agent to lock the sats**. The agent console shows each tool call. The sats move into a hold invoice.
-4. The card shows the **meeting code** (P). Copy it.
-5. **Guide** tab: paste the code and press **Settle**. The guide is paid 21 000 sats.
+4. The card shows the **meeting code** (P) as a QR code and as text.
+5. **Guide** tab: scan the QR (on phones whose browser has `BarcodeDetector`, such as Chrome on Android) or paste the code, then press **Settle**. The guide is paid 21 000 sats.
 6. **Agent** tab: **Trigger GDACS cyclone alert** (a replay of the real BELAL-24 record). Any locked booking is refunded automatically. **Skip ahead 13 h** shows a hold timing out and refunding.
 
 You can also type a request for the agent, in English or French: *"book the lagoon boat"* or *"je veux voir la cascade de Chamarel"*.
@@ -98,7 +98,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 
 ## Low bandwidth, mid-range phones
 
-- The Preact PWA is 28 KB minified (about 11 KB gzipped) plus 5 KB of CSS, with no web fonts and no images beyond one SVG icon.
+- The Preact PWA is 41 KB minified (about 16 KB gzipped, QR encoder included) plus 5 KB of CSS, with no web fonts and no images beyond one SVG icon.
 - It is designed for 360 px first, with 44 px touch targets. It works in light and dark mode.
 - An app-shell service worker caches the shell, while API calls always go to the network.
 - Live updates use Server-Sent Events, not polling.
@@ -124,10 +124,10 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 ## Next iteration
 
 1. The **first real NWC run** on two test wallets. It checks the hold-method gate, records `get_budget` and the real `settle_deadline`, then does one lock and settle and one lock, cancel and refund.
-2. A **QR code** for the meeting code, scanned by the guide's phone camera.
-3. **Wallet-enforced budgets** (NWC-13) on a self-hosted wallet, so the cap is enforced twice.
-4. A second cyclone feed: the class warnings of the **Mauritius Meteorological Services**.
-5. A **Kreol Morisien** user interface, and an optional LLM planner behind the same tools.
+2. **Wallet-enforced budgets** (NWC-13) on a self-hosted wallet, so the cap is enforced twice.
+3. A second cyclone feed: the class warnings of the **Mauritius Meteorological Services**.
+4. A **Kreol Morisien** user interface, and an optional LLM planner behind the same tools.
+5. Camera QR scanning on browsers without `BarcodeDetector` (a small decoder library).
 
 ## Still needed before submission (team steps)
 
@@ -153,6 +153,7 @@ npm run e2e:nwc         # refuses to start without those values; moves at most 1
   - `@noble/curves`, `@noble/hashes` and `@scure/base` (MIT);
   - Hono (MIT);
   - Preact (MIT);
+  - uqr (MIT), the QR encoder;
   - fast-check (MIT);
   - Vitest (MIT);
   - esbuild (MIT);

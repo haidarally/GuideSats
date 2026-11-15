@@ -23,8 +23,8 @@ Le parcours principal prend environ 30 secondes :
 1. **Portefeuille voyageur** : choisissez *Randonnée au lever du soleil au Morne Brabant*, puis **Réserver**. Le brouillon de mandat affiche le plafond, la clé du guide, la fenêtre de temps et « un seul paiement ».
 2. **Approuver le mandat**. Votre navigateur crée un secret P, le garde, et n'envoie que H = SHA-256(P).
 3. **Demander à l'agent de bloquer les sats**. La console de l'agent montre chaque appel d'outil. Les sats passent dans une facture « hold ».
-4. La carte affiche le **code de rendez-vous** (P). Copiez-le.
-5. Onglet **Guide** : collez le code et appuyez sur **Encaisser**. Le guide reçoit 21 000 sats.
+4. La carte affiche le **code de rendez-vous** (P) en QR code et en texte.
+5. Onglet **Guide** : scannez le QR (sur les téléphones dont le navigateur a `BarcodeDetector`, comme Chrome sur Android) ou collez le code, puis appuyez sur **Encaisser**. Le guide reçoit 21 000 sats.
 6. Onglet **Agent** : **Déclencher une alerte cyclone GDACS** (un rejeu de la vraie fiche BELAL-24). Toute réservation bloquée est remboursée automatiquement. **Avancer de 13 h** montre une facture qui expire et rembourse.
 
 Vous pouvez aussi écrire une demande à l'agent, en français ou en anglais : *« je veux voir la cascade de Chamarel »*.
@@ -110,17 +110,16 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 ## Prochaine étape
 
 1. Premier vrai essai NWC sur deux portefeuilles de test.
-2. Un QR code pour le code de rendez-vous.
-3. Des budgets imposés par le portefeuille.
-4. Les alertes de la Météo mauricienne (MMS) comme seconde source.
-5. Une interface en kreol morisien.
+2. Des budgets imposés par le portefeuille.
+3. Les alertes de la Météo mauricienne (MMS) comme seconde source.
+4. Une interface en kreol morisien.
 
 ## Crédits
 
 - **GDACS**, système mondial d'alerte et de coordination en cas de catastrophe (ONU et Commission européenne), pour les données cyclone enregistrées.
 - **La spécification BOLT11**, pour le vecteur de test.
 - **Bibliothèques :**
-  - `@getalby/sdk`, `light-bolt11-decoder`, `@noble/curves`, `@noble/hashes`, `@scure/base`, Hono, Preact, fast-check, Vitest, esbuild et tsx (MIT) ;
+  - `@getalby/sdk`, `light-bolt11-decoder`, `@noble/curves`, `@noble/hashes`, `@scure/base`, Hono, Preact, uqr, fast-check, Vitest, esbuild et tsx (MIT) ;
   - TypeScript et Playwright (Apache-2.0).
 - Tous les guides et toutes les entreprises des données de démo sont fictifs.
 
