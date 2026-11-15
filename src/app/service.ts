@@ -82,6 +82,9 @@ export class BookingService {
   now(): number {
     return this.clock();
   }
+  get travellerWalletId(): string {
+    return this.cfg.travellerWalletId;
+  }
   setFeed(feed: () => GdacsFeed): void {
     this.feed = feed;
   }

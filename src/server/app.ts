@@ -15,10 +15,17 @@ import { MandateError } from "../domain/mandate";
 import { TransitionError } from "../domain/booking";
 import { loadFixture, replayShifted } from "../feeds/gdacs";
 import { redact } from "../log/redact";
-import type { SimWorld } from "../app/world";
+import type { BookingService } from "../app/service";
+import type { TxRecord } from "../ln/backend";
+
+/** What the server needs from a world: the service, plus a clock control on the simulator only. */
+export interface AppWorld {
+  svc: BookingService;
+  advance?: (ms: number) => void;
+}
 
 export interface ServerContext {
-  world(): SimWorld;
+  world(): AppWorld;
   reset(): Promise<void>;
   allowedHosts: string[]; // e.g. ["127.0.0.1:8787", "localhost:8787"]
 }
@@ -43,11 +50,21 @@ function param(c: Context, name: string): string {
   return v;
 }
 
-export async function snapshot(w: SimWorld) {
-  const { svc, ledger } = w;
+const newestFirst = (txs: TxRecord[]) => [...txs].sort((a, b) => b.at - a.at).slice(0, 20);
+
+/** Everything the PWA shows. Wallet data is read through the Lightning interface, so it is the same for SIM and NWC. */
+export async function snapshot(w: AppWorld) {
+  const { svc } = w;
   const now = svc.now();
   const feed = svc.currentFeed();
-  const travellerId = w.seed.traveller.id;
+  const travellerId = svc.travellerWalletId;
+  const payer = svc.backend.payer(travellerId);
+  const guides = await Promise.all(
+    svc.guides.map(async (g) => {
+      const r = svc.backend.receiver(g.id);
+      return { ...g, balanceSats: await r.getBalance(), transactions: newestFirst(await r.listTransactions()) };
+    }),
+  );
   const anyTour = svc.tours[0];
   const verdict = anyTour ? cycloneVerdict(feed, { now, tourStart: now, tourEnd: now + 48 * 3_600_000 }) : { cancel: false };
   return {
@@ -58,11 +75,11 @@ export async function snapshot(w: SimWorld) {
     cyclone: { active: verdict.cancel, event: "event" in verdict ? verdict.event : undefined, source: feed.features.length ? "GDACS (BELAL-24, SYNTHETIC REPLAY)" : "GDACS fixture: no active alert" },
     traveller: {
       id: travellerId,
-      balanceSats: ledger.balance(travellerId),
-      budget: ledger.budget(travellerId),
-      transactions: ledger.transactions(travellerId).slice(-20).reverse(),
+      balanceSats: await payer.getBalance(),
+      budget: await payer.getBudget(),
+      transactions: newestFirst(await payer.listTransactions()),
     },
-    guides: svc.guides.map((g) => ({ ...g, balanceSats: ledger.balance(g.id), transactions: ledger.transactions(g.id).slice(-20).reverse() })),
+    guides,
     tours: svc.tours,
     bookings: svc.bookings().map((b) => {
       const m = svc.mandate(b.id);
@@ -233,6 +250,7 @@ export function createApp(ctx: ServerContext) {
     const hours = typeof b.hours === "number" && b.hours > 0 && b.hours <= 48 ? b.hours : null;
     if (hours === null) throw new BadRequest("hours must be in (0, 48]");
     const w = ctx.world();
+    if (!w.advance) return c.json({ error: "no clock control on this backend" }, 403);
     w.advance(hours * 3_600_000);
     const expired = await w.svc.reconcileHolds();
     broadcast("update", { type: "clock" });

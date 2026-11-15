@@ -18,8 +18,12 @@ const reset = async () => {
   world = await buildSimWorld({ log });
 };
 
-if (process.env.GDACS_LIVE === "1") {
-  // Optional: read the live public GDACS feed once at start (read only, no key).
+// Optional: read the live public GDACS feed (read only, no key) at start and every 15 minutes.
+const LIVE = process.env.GDACS_LIVE === "1";
+let lastFetch = 0;
+async function refreshLive() {
+  if (!LIVE || Date.now() - lastFetch < 15 * 60_000) return;
+  lastFetch = Date.now();
   try {
     const live = await fetchLive();
     world.svc.setFeed(() => live);
@@ -28,6 +32,23 @@ if (process.env.GDACS_LIVE === "1") {
     log.warn("gdacs_live_failed", { err: e });
   }
 }
+
+// The watcher: every 30 s, apply the cyclone rule (cancel locked holds = refund) and mark expired holds.
+async function tick() {
+  await refreshLive();
+  try {
+    await world.svc.applyCycloneRule();
+  } catch (e) {
+    log.warn("cyclone_rule_failed", { err: e });
+  }
+  try {
+    await world.svc.reconcileHolds();
+  } catch (e) {
+    log.warn("reconcile_failed", { err: e });
+  }
+}
+await tick();
+setInterval(() => void tick(), 30_000).unref();
 
 const app = createApp({ world: () => world, reset, allowedHosts: [`${HOST}:${PORT}`, `localhost:${PORT}`] });
 if (!existsSync("web/dist/index.html")) throw new Error("web/dist is missing: run `npm run build:web` (npm run demo does it for you)");
