@@ -84,7 +84,13 @@ function errorCode(e: unknown): string {
   return "ERROR";
 }
 
-const TIMEOUT_CODES = new Set(["Nip47ReplyTimeoutError", "Nip47PublishTimeoutError", "Nip47TimeoutError", "INTERNAL", "TIMEOUT"]);
+/**
+ * NIP-47 error codes with which the WALLET says it refused the payment: nothing left it, so the
+ * mandate's single use may be given back. Everything else (INTERNAL, OTHER, timeouts, relay or
+ * socket errors, anything we cannot classify) is "unknown": the payment may be in flight, so the
+ * mandate stays reserved (fail closed).
+ */
+const DEFINITE_FAILURES = new Set(["PAYMENT_FAILED", "INSUFFICIENT_BALANCE", "QUOTA_EXCEEDED", "RESTRICTED", "UNAUTHORIZED", "RATE_LIMITED", "NOT_IMPLEMENTED", "NOT_FOUND"]);
 
 export class NwcBackend implements LightningBackend {
   readonly kind = "nwc" as const;
@@ -129,7 +135,7 @@ export class NwcBackend implements LightningBackend {
           return { status: "settled", preimage: r.preimage };
         } catch (e) {
           const code = errorCode(e);
-          return TIMEOUT_CODES.has(code) ? { status: "unknown", error: code } : { status: "failed", error: code };
+          return DEFINITE_FAILURES.has(code) ? { status: "failed", error: code } : { status: "unknown", error: code };
         }
       },
       listTransactions: async () => (await this.client(id).listTransactions({ limit: 20 })).transactions.map((t) => mapTx(t, this.clock())),

@@ -77,6 +77,16 @@ describe("NWC adapter (fake client)", () => {
     const to = new NwcBackend("regtest", { t: fake({ payInvoice: async () => Promise.reject(Object.assign(new Error("x"), { name: "Nip47ReplyTimeoutError" })) }).c });
     expect(await to.payer("t").payInvoice("ln")).toEqual({ status: "unknown", error: "Nip47ReplyTimeoutError" });
   });
+  it("fails closed on any pay error it cannot classify (review): only wallet-reported refusals are definite", async () => {
+    const rejecting = (e: unknown) => new NwcBackend("regtest", { t: fake({ payInvoice: async () => Promise.reject(e) }).c }).payer("t");
+    expect(await rejecting(new Error("socket closed")).payInvoice("ln")).toMatchObject({ status: "unknown" });
+    expect(await rejecting(Object.assign(new Error("x"), { code: "OTHER" })).payInvoice("ln")).toMatchObject({ status: "unknown" });
+    expect(await rejecting(Object.assign(new Error("x"), { code: "INTERNAL" })).payInvoice("ln")).toMatchObject({ status: "unknown" });
+    expect(await rejecting("not even an Error").payInvoice("ln")).toMatchObject({ status: "unknown" });
+    for (const code of ["PAYMENT_FAILED", "QUOTA_EXCEEDED", "RESTRICTED", "UNAUTHORIZED", "RATE_LIMITED", "NOT_IMPLEMENTED"]) {
+      expect(await rejecting(Object.assign(new Error("x"), { code })).payInvoice("ln")).toEqual({ status: "failed", error: code });
+    }
+  });
   it("parses networks", () => {
     expect(parseNetwork("bitcoin")).toBe("mainnet");
     expect(parseNetwork(" Signet ")).toBe("signet");
