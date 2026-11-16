@@ -184,7 +184,7 @@ Chacune refuse de démarrer sans ces valeurs. `e2e:nwc-app` refuse aussi quand s
 - L'alerte cyclone reste disponible comme REJEU SYNTHÉTIQUE de BELAL-24, pour montrer un remboursement. **Pousser l'agent à trop dépenser** forge ses factures sur place (signées par une clé jetable), et elles sont refusées avant tout appel au portefeuille.
 - Sur Ctrl+C, le serveur annule d'abord tout « hold » qu'il a encore d'ouvert chez le portefeuille du guide.
 
-Tout cela a été lancé sur NWC contre les portefeuilles de test NWC Faucet d'Alby le 16 nov. 2026. Leurs soldes sont des sats fictifs qui n'existent qu'à l'intérieur d'un seul Alby Hub ; le réseau annoncé est `mainnet`, donc les factures commencent par `lnbc`.
+`e2e:nwc`, `demo:nwc` (lors des prises de la vidéo) et `e2e:nwc-app` ont été lancés sur NWC contre les portefeuilles de test NWC Faucet d'Alby le 16 nov. 2026. Le refus des commandes de temps est testé hors ligne (`tests/server/nwc-mode.test.ts`). Leurs soldes sont des sats fictifs qui n'existent qu'à l'intérieur d'un seul Alby Hub ; le réseau annoncé est `mainnet`, donc les factures commencent par `lnbc`.
 
 **`npm run e2e:nwc`** (les portefeuilles pilotés directement) a montré :
 

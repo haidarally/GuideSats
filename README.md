@@ -165,7 +165,7 @@ Each one refuses to start without those values, and `e2e:nwc-app` also refuses w
 - The cyclone alert stays as the SYNTHETIC REPLAY of BELAL-24, so a refund can be shown. **Push the agent to overspend** forges its invoices locally (signed by a throwaway key), and they are refused before any wallet call.
 - On Ctrl+C the server first cancels any hold it still has open at the guide's wallet.
 
-All of this ran over NWC against Alby's NWC Faucet test wallets on 16 Nov 2026. Their balances are dummy sats that exist only inside one Alby Hub; the network is reported as `mainnet`, so the invoices start with `lnbc`.
+`e2e:nwc`, `demo:nwc` (in the video takes) and `e2e:nwc-app` ran over NWC against Alby's NWC Faucet test wallets on 16 Nov 2026. The refusal of the time controls is tested offline (`tests/server/nwc-mode.test.ts`). Their balances are dummy sats that exist only inside one Alby Hub; the network is reported as `mainnet`, so the invoices start with `lnbc`.
 
 **`npm run e2e:nwc`** (the wallets driven directly) showed:
 
