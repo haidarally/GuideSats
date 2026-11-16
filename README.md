@@ -1,4 +1,4 @@
-# GuideSats (working name)
+# GuideSats
 
 **An AI travel agent books a small Mauritian tour guide and pays them in sats over Lightning, but only inside a mandate that the traveller approves and the agent cannot change.**
 The sats wait in a hold invoice until the traveller shows a meeting code to the guide.

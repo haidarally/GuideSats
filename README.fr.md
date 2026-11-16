@@ -1,4 +1,4 @@
-# GuideSats (nom provisoire)
+# GuideSats
 
 **Un agent de voyage IA réserve un petit guide touristique mauricien et le paie en sats sur Lightning, mais seulement dans un mandat que le voyageur approuve et que l'agent ne peut pas modifier.**
 Les sats attendent dans une facture « hold » jusqu'à ce que le voyageur montre un code de rendez-vous au guide.
