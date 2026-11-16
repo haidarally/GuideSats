@@ -46,7 +46,7 @@ L'agent ne paie que la facture que l'appli a elle-même demandée au portefeuill
 ## Tester
 
 ```bash
-npm run check        # typecheck + 185 tests (unitaires, propriété, API) + les 6 scénarios de bout en bout ; hors ligne, sans clé
+npm run check        # typecheck + 189 tests (unitaires, propriété, API) + les 6 scénarios de bout en bout ; hors ligne, sans clé
 npm run e2e:sim      # les six scénarios de démo, sous forme de rapport
 npm run test:e2e     # Playwright à 360 px (EN) et 412 px (FR) ; une fois avant : npx playwright install chromium
 ```

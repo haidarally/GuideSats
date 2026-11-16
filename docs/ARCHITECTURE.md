@@ -103,7 +103,7 @@ All in one function, `payWithinMandate` (`src/app/payments.ts`), in this order:
 4. `checkInvoice`: network prefix, exact amount, payment hash = H, not expiring within 60 s, payee = key recovered from the signature (or the explicit `n` tag on regtest SIMULATED invoices only).
 5. `checkSpend`: cap, payee, hash, window, status.
 6. Atomic compare-and-set of the mandate from `approved` to `consuming`.
-7. Pay, then wait until the guide's wallet reports the hold as `accepted`, then check it against the wallet's `settle_deadline` (the hold-limit check). Definite failure re-arms the mandate; anything else (an unknown outcome, a pay call that failed with an error) goes to the reconcile step, which decides from `lookup_invoice` and otherwise leaves the mandate reserved.
+7. Pay, then wait until the guide's wallet reports the hold as `accepted`, then check it against the wallet's `settle_deadline` (the hold-limit check). Definite failure re-arms the mandate, but only while the reservation is still this payment's (same hash; a late reply never undoes a newer reservation); anything else (an unknown outcome, a pay call that failed with an error) goes to the reconcile step, which decides from `lookup_invoice` and otherwise leaves the mandate reserved.
 
 ## The reconcile step
 
@@ -124,7 +124,7 @@ Every change is a compare-and-set on the mandate status and on the booking state
 
 A guide's wallet cancels an accepted hold by itself at its `settle_deadline`. On Alby's NWC Faucet test wallets (16 Nov 2026) it was a block height 24 blocks above `get_info`'s `block_height`, about 4 h. `src/domain/holdLimit.ts`:
 
-- reads `settle_deadline` as unix seconds at 500 000 000 and above, as a block height below (the nLockTime rule);
+- reads `settle_deadline` as unix seconds at 500 000 000 and above, as a block height below (the nLockTime rule), and refuses 10 000 000 000 and above (most likely milliseconds) as no deadline;
 - compares heights directly, keeping a chosen margin of 6 blocks, and converts a wait into blocks at 10 minutes each (rounded up) only where a clock time is unavoidable;
 - sets the lock window: (24 − 6) × 10 min − 2 h meeting buffer = from 1 h before the tour.
 
