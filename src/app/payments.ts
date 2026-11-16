@@ -6,7 +6,7 @@
 // (app/reconcile.ts), which decides from the guide's wallet, never from error text.
 import { cycloneVerdict, type GdacsFeed } from "../domain/cyclone";
 import type { Booking } from "../domain/booking";
-import { beginSpend, checkSpend, completeSpend, releaseSpend, revokeMandate, type Mandate } from "../domain/mandate";
+import { beginSpend, checkSpend, completeSpend, releaseSpend, revokeMandate } from "../domain/mandate";
 import { checkInvoice } from "../ln/invoiceCheck";
 import type { LightningBackend, PayOutcome, ReceiverWallet } from "../ln/backend";
 import type { Store } from "../store/db";
@@ -47,9 +47,16 @@ async function waitAccepted(receiver: ReceiverWallet, hash: string, outcome: () 
   }
 }
 
-/** Nothing left the wallet: re-arm the single use if the booking is still payable, else close the mandate. */
-function giveBack(d: PaymentDeps, bookingId: string, consuming: Mandate): Mandate {
-  return d.store.getBooking(bookingId)?.state === "mandated" ? releaseSpend(consuming) : revokeMandate(consuming);
+/**
+ * Nothing left the wallet: re-arm the single use if the booking is still payable, else close the mandate.
+ * Only if the reservation is still THIS payment's (same hash): a late reply must never undo a newer one,
+ * e.g. after the reconcile step retired the hash and the traveller approved again with a new secret.
+ */
+function giveBack(d: PaymentDeps, bookingId: string, hash: string): boolean {
+  const m = d.store.mandateForBooking(bookingId);
+  const b = d.store.getBooking(bookingId);
+  if (!m || !b || m.status !== "consuming" || (b.mode === "hold" ? m.paymentHash : b.paymentHash) !== hash) return false;
+  return d.store.casMandate(b.state === "mandated" ? releaseSpend(m) : revokeMandate(m), "consuming");
 }
 
 /** What the caller is told, read from the store after the pay path or the reconcile step resolved (or not). */
@@ -131,7 +138,7 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
       return { ok: true, state: "paid", amountSats: spend.amountSats };
     }
     if (o.status === "failed") {
-      if (!d.store.casMandate(giveBack(d, bookingId, consuming), "consuming")) return resultNow(d, bookingId, spend.amountSats);
+      if (!giveBack(d, bookingId, spend.paymentHash)) return resultNow(d, bookingId, spend.amountSats);
       d.store.audit(at, "pay_failed", { bookingId, error: o.error });
       return { ok: false, reason: `payment_failed:${o.error}` };
     }
@@ -156,7 +163,7 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
   const o = outcome as PayOutcome | null;
   if (o && o.status === "failed") {
     // Definite failure (a NIP-47 refusal code from the wallet): nothing left it, so the single use is given back.
-    if (!d.store.casMandate(giveBack(d, bookingId, consuming), "consuming")) return resultNow(d, bookingId, spend.amountSats);
+    if (!giveBack(d, bookingId, spend.paymentHash)) return resultNow(d, bookingId, spend.amountSats);
     d.store.audit(at, "pay_failed", { bookingId, error: o.error });
     return { ok: false, reason: `payment_failed:${o.error}` };
   }
