@@ -216,6 +216,8 @@ La vidéo de démo a été enregistrée avec `npm run record:nwc` sur les mêmes
 
 ## Crédits
 
+- Réalisé par un seul développeur avec Claude Code (Anthropic), un assistant de programmation IA. Les commits qu'il a coécrits portent une ligne `Co-Authored-By`.
+- **NWC Faucet** d'Alby (faucet.nwc.dev), pour les deux portefeuilles de test à soldes fictifs utilisés sur NWC.
 - **GDACS**, système mondial d'alerte et de coordination en cas de catastrophe (ONU et Commission européenne), pour les données cyclone enregistrées.
 - **La spécification BOLT11**, pour le vecteur de test.
 - **Bibliothèques :**

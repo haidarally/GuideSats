@@ -196,6 +196,8 @@ The demo video was recorded with `npm run record:nwc` on the same wallets, with 
 
 ## Credits
 
+- Built by one developer with Claude Code (Anthropic), an AI coding assistant. The commits it co-wrote carry a `Co-Authored-By` line.
+- Alby's NWC Faucet (faucet.nwc.dev) for the two test wallets with dummy balances used in the NWC runs.
 - GDACS, the Global Disaster Alert and Coordination System, a cooperation framework of the United Nations and the European Commission. The cyclone fixtures in `fixtures/gdacs/` were recorded from its public event API.
 - The BOLT11 specification (lightning/bolts) for the test vector in `fixtures/bolt11/`.
 - Libraries:
