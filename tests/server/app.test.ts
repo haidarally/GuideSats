@@ -115,6 +115,25 @@ describe("HTTP API", () => {
     expect((await post("/api/traveller/bookings", { tourId: "tour_lagoon", mode: "free" })).status).toBe(400);
   });
 
+  it("re-approval over HTTP: an expired hold invoice needs a new secret; the old hash and secret are refused", async () => {
+    const { call: post, w: world } = await setup();
+    const { bookingId } = (await (await post("/api/traveller/bookings", { tourId: "tour_lemorne" })).json()) as { bookingId: string };
+    const s1 = pair();
+    expect((await post(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: s1.h })).status).toBe(200);
+    expect((await post(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: pair().h })).status).toBe(409); // not while approved
+    const r = (await (await post("/api/demo/expire-invoice", {})).json()) as { state: string };
+    expect(r.state).toBe("reapproval_needed");
+    const res = await post(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: s1.h });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "payment_hash_reused" });
+    const s2 = pair();
+    expect((await post(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: s2.h })).status).toBe(200);
+    expect(((await (await post("/api/agent/run", { bookingId })).json()) as { outcome: string }).outcome).toBe("locked");
+    expect((await post(`/api/guide/bookings/${bookingId}/settle`, { preimage: s1.p })).status).toBe(409);
+    expect(await (await post(`/api/guide/bookings/${bookingId}/settle`, { preimage: s2.p })).json()).toEqual({ ok: true, state: "settled" });
+    expect(world().ledger.balance("guide_lemorne")).toBe(21_000);
+  });
+
   it("demo attack: overspend, other payee, self-approval and cap raise are all refused", async () => {
     const { call, w } = await setup();
     expect((await call("/api/demo/attack", {})).status).toBe(409);

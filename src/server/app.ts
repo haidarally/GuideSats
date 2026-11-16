@@ -7,6 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { agentFacade, runTool, type ToolCall } from "../agent/tools";
 import { encodeSimInvoice } from "../ln/bolt11";
+import { invoiceExpiresAt } from "../ln/invoiceCheck";
 import { simNodeId } from "../ln/sim";
 import { runAgent, type Goal } from "../agent/planner";
 import { cycloneVerdict } from "../domain/cyclone";
@@ -154,6 +155,8 @@ export function createApp(ctx: ServerContext) {
     return c.json({ bookingId: booking.id, capSats: mandate.capSats, payeePubkey: mandate.payeePubkey, notBefore: mandate.notBefore, notAfter: mandate.notAfter });
   });
 
+  // Also the re-approval of a booking whose hold invoice died unpaid ("reapproval_needed"): the phone sends
+  // the hash of a NEW secret; a hash used before is refused (409 payment_hash_reused).
   app.post("/api/traveller/bookings/:id/approve", async (c) => {
     const id = param(c, "id");
     const b = await json(c);
@@ -247,6 +250,29 @@ export function createApp(ctx: ServerContext) {
     }
     broadcast("agent", { outcome: results.every((r) => !r.ok) ? "all_refused_by_the_mandate" : "SOMETHING_WAS_PAID" });
     return c.json({ bookingId: target.id, results });
+  });
+
+  // Shows the re-approval flow: the agent asks for the hold invoice but does not pay it, and the clock
+  // skips past its expiry. The watcher's reconcile step then retires H; the traveller approves again.
+  app.post("/api/demo/expire-invoice", async (c) => {
+    const no = simOnly(c);
+    if (no) return no;
+    const w = ctx.world();
+    if (!w.advance) return c.json({ error: "no clock control on this backend" }, 403);
+    const svc = w.svc;
+    const target = [...svc.bookings()].reverse().find((b) => b.mode === "hold" && b.state === "mandated" && svc.mandate(b.id)?.status === "approved");
+    if (!target) return c.json({ error: "approve_a_booking_first" }, 409);
+    const call: ToolCall = { tool: "request_invoice", args: { bookingId: target.id } };
+    broadcast("agent", { goal: { kind: "expire_invoice" }, started: true });
+    const result = await runTool(agentFacade(svc), call);
+    broadcast("agent", redact({ call, result }));
+    if (!result.ok) return c.json({ error: result.error }, 409);
+    const expiresAt = invoiceExpiresAt((result.data as { invoice: string }).invoice) ?? svc.now();
+    w.advance(Math.max(0, expiresAt - svc.now()) + 1000);
+    const reconciled = await svc.reconcile();
+    broadcast("agent", { outcome: "hold_invoice_expired_unpaid" });
+    broadcast("update", { type: "clock" });
+    return c.json({ ok: true, bookingId: target.id, state: svc.booking(target.id).state, reconciled });
   });
 
   app.post("/api/demo/advance", async (c) => {

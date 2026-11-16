@@ -52,6 +52,7 @@ const en = {
   state: {
     proposed: "Waiting for your approval",
     mandated: "Approved: agent may lock the sats",
+    reapproval_needed: "Invoice expired: approve again with a new code",
     locked: "Sats locked in a hold invoice",
     settled: "Paid to the guide",
     refunded_cyclone: "Refunded: cyclone alert",
@@ -71,6 +72,10 @@ const en = {
   waitTour: "You can confirm once the tour has started.",
   scan: "Scan QR",
   attack: "Push the agent to overspend",
+  reapprove: "Approve again (new code)",
+  reapproveHint: "The hold invoice expired before the sats were locked. Your phone makes a new secret code; the old code and the old invoice can never be used again.",
+  windowClosed: "The time to lock the sats has passed.",
+  expireInvoice: "Let a hold invoice expire unpaid",
 };
 
 const fr: typeof en = {
@@ -124,6 +129,7 @@ const fr: typeof en = {
   state: {
     proposed: "En attente de votre approbation",
     mandated: "Approuvé : l'agent peut bloquer les sats",
+    reapproval_needed: "Facture expirée : approuvez à nouveau avec un nouveau code",
     locked: "Sats bloqués dans une facture « hold »",
     settled: "Payé au guide",
     refunded_cyclone: "Remboursé : alerte cyclone",
@@ -143,6 +149,10 @@ const fr: typeof en = {
   waitTour: "Vous pourrez confirmer une fois l'excursion commencée.",
   scan: "Scanner le QR",
   attack: "Pousser l'agent à trop dépenser",
+  reapprove: "Approuver à nouveau (nouveau code)",
+  reapproveHint: "La facture « hold » a expiré avant que les sats soient bloqués. Votre téléphone crée un nouveau code secret ; l'ancien code et l'ancienne facture ne pourront plus jamais servir.",
+  windowClosed: "Le moment de bloquer les sats est passé.",
+  expireInvoice: "Laisser expirer une facture « hold » impayée",
 };
 
 export const STRINGS = { en, fr };

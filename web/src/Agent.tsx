@@ -40,6 +40,7 @@ export function Agent({ s, t, log, onError, refresh }: Props) {
               {s.cyclone.active ? t.cycloneOff : t.cycloneOn}
             </button>
             <button class="ghost" data-testid="attack" onClick={() => post("/api/demo/attack").then(refresh, onError)}>{t.attack}</button>
+            <button class="ghost" data-testid="expire-invoice" onClick={() => post("/api/demo/expire-invoice").then(refresh, onError)}>{t.expireInvoice}</button>
             <button class="ghost" onClick={() => post("/api/demo/advance", { hours: 13 }).then(refresh, onError)}>{t.skip}</button>
             <button class="ghost" onClick={() => post("/api/demo/reset").then(refresh, onError)}>{t.reset}</button>
           </div>

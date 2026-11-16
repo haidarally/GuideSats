@@ -6,6 +6,9 @@ import { NETWORK_PREFIX, recoverPayee, type Network } from "./bolt11";
 
 export type PayeeProof = "signature" | "sim_n_tag";
 
+/** An invoice that expires sooner than this is refused (and, in hold mode, treated as dead). */
+export const MIN_SECONDS_LEFT = 60;
+
 export interface InvoiceExpectation {
   network: Network;
   amountSats: number; // exact amount expected
@@ -76,7 +79,7 @@ export function checkInvoice(paymentRequest: string, exp: InvoiceExpectation): I
   // Note: light-bolt11-decoder's `expiry` field is the relative `x` tag (seconds), not an absolute time.
   const rel = get("expiry");
   const expiresAtSec = timestamp + (typeof rel === "number" ? rel : 3600); // BOLT11 default expiry: 3600 s
-  const minLeft = (exp.minSecondsLeft ?? 60) * 1000;
+  const minLeft = (exp.minSecondsLeft ?? MIN_SECONDS_LEFT) * 1000;
   if (expiresAtSec * 1000 - exp.now < minLeft) return { ok: false, reason: "expired" };
 
   const nTag = typeof get("payee") === "string" ? (get("payee") as string).toLowerCase() : null;

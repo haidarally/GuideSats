@@ -76,3 +76,30 @@ test("the agent console shows every overspend attempt refused", async ({ page, r
   await expect(log).toContainText("unknown tool: approve_mandate");
   await page.screenshot({ path: `test-results/${test.info().project.name}-attack.png`, fullPage: true });
 });
+
+test("hold invoice expired unpaid: the traveller approves again with a new code, then the guide is paid", async ({ page, request }) => {
+  await request.post("/api/demo/reset", { data: {} });
+  await page.goto("/");
+  const fr = test.info().project.name.endsWith("fr");
+  await page.getByTestId("book-tour_lemorne").click();
+  await page.getByTestId("approve").click();
+  await page.getByTestId("tab-agent").click();
+  await page.getByTestId("expire-invoice").click();
+  await expect(page.getByTestId("agent-log")).toContainText("request_invoice");
+  await page.getByTestId("tab-traveller").click();
+  const card = page.locator(".card.state-reapproval_needed");
+  await expect(card).toContainText(fr ? "nouveau code" : "new code");
+  await page.screenshot({ path: `test-results/${test.info().project.name}-reapprove.png`, fullPage: true });
+  await page.getByTestId("reapprove").click();
+  await page.getByTestId("ask-agent").click();
+  const code = page.getByTestId("meeting-code");
+  await expect(code).toBeVisible();
+  await expect(page.getByTestId("traveller-balance")).toContainText("99 000");
+  const p = (await code.textContent())!.replace(/\s+/g, "");
+  await page.getByTestId("tab-guide").click();
+  await page.getByTestId("guide-code").fill(p);
+  await page.getByTestId("settle").click();
+  await expect(page.getByTestId("guide-balance")).toContainText("21 000");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

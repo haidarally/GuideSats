@@ -9,11 +9,11 @@ import { applyEvent, isTerminal, type Booking, type BookingEvent, type PaymentMo
 import { cycloneVerdict, type CycloneVerdict, type GdacsFeed } from "../domain/cyclone";
 import { approveMandate, draftMandate, revokeMandate, type Mandate, type TravellerApproval } from "../domain/mandate";
 import type { LightningBackend, PayOutcome } from "../ln/backend";
-import { invoiceExpiresAt } from "../ln/invoiceCheck";
+import { invoiceExpiresAt, MIN_SECONDS_LEFT } from "../ln/invoiceCheck";
 import type { Logger } from "../log/redact";
 import type { Store } from "../store/db";
 import { payWithinMandate, type PaymentDeps, type PayResult } from "./payments";
-import { reconcileBooking, transitionBooking, type ReconcileOutcome } from "./reconcile";
+import { reconcileBooking, retireDeadInvoice, transitionBooking, type ReconcileOutcome } from "./reconcile";
 
 export interface Tour {
   id: string;
@@ -187,16 +187,21 @@ export class BookingService {
     return { booking, mandate };
   }
 
-  /** The traveller approves the mandate and (hold mode) binds H = SHA-256(P). P stays on the traveller's phone. */
+  /**
+   * The traveller approves the mandate and (hold mode) binds H = SHA-256(P). P stays on the traveller's phone.
+   * Also the re-approval after a hold invoice died unpaid (booking "reapproval_needed"): the phone makes a NEW
+   * secret, and an H used before is refused, so the old secret and the old invoice stay dead.
+   */
   approveMandate(bookingId: string, approval: TravellerApproval): Mandate {
     const b = this.booking(bookingId);
     if (b.mode === "hold" && (approval.paymentHash === null || !HEX32.test(approval.paymentHash))) throw new ServiceError("bad_payment_hash");
     if (b.mode === "on_completion" && approval.paymentHash !== null) throw new ServiceError("plan_b_takes_no_hash");
     const m = this.store.mandateForBooking(bookingId);
     if (!m) throw new ServiceError("no_mandate");
+    if (approval.paymentHash !== null && (m.retiredHashes ?? []).includes(approval.paymentHash)) throw new ServiceError("payment_hash_reused");
     const approved = approveMandate(m, approval);
     if (!this.store.casMandate(approved, "pending_approval")) throw new ServiceError("mandate_changed");
-    this.save({ ...applyEvent(b, "APPROVE_MANDATE", approval.at), paymentHash: approval.paymentHash });
+    this.save({ ...applyEvent(b, "APPROVE_MANDATE", approval.at), paymentHash: approval.paymentHash, invoice: null });
     this.store.audit(approval.at, "mandate_approved", { bookingId, capSats: approved.capSats, payeePubkey: approved.payeePubkey, paymentHash: approval.paymentHash });
     return approved;
   }
@@ -323,8 +328,14 @@ export class BookingService {
     if (!m || m.status !== "approved") throw new ServiceError("no_approved_mandate");
     // A cached invoice is reused while it is still payable. Plan B asks the guide's wallet for a fresh one
     // once it has expired (e.g. a failed payment retried later). A hold invoice is bound to the traveller's
-    // H and cannot be re-made, so hold mode keeps returning it (the invoice check then refuses it as expired).
-    if (b.invoice && (b.mode === "hold" || (invoiceExpiresAt(b.invoice) ?? 0) - this.clock() > 60_000)) return b.invoice;
+    // H and cannot be re-made: once it has expired, H is retired and the traveller must approve again
+    // with a new secret (the agent cannot do that).
+    if (b.invoice && (invoiceExpiresAt(b.invoice) ?? 0) - this.clock() > MIN_SECONDS_LEFT * 1000) return b.invoice;
+    if (b.invoice && b.mode === "hold") {
+      await retireDeadInvoice(this.paymentDeps(), bookingId);
+      this.emit({ type: "booking", booking: this.booking(bookingId) });
+      throw new ServiceError("reapproval_needed");
+    }
     const t = this.tour(b.tourId);
     if (b.mode === "on_completion") {
       if (!b.confirmedAt) throw new ServiceError("not_confirmed_by_traveller");

@@ -55,6 +55,7 @@ export class RuleBasedPlanner implements Planner {
     if (!b.ok) return { done: `unknown_booking` };
     const booking = b.data as { state: string; mode: string; confirmed: boolean };
     if (booking.state === "proposed") return { done: "waiting_for_traveller_approval" };
+    if (booking.state === "reapproval_needed") return { done: "waiting_for_traveller_to_approve_again_with_a_new_code" };
     if (booking.state !== "mandated") return { done: `nothing_to_do:${booking.state}` };
     if (booking.mode === "on_completion" && !booking.confirmed) return { done: "waiting_for_traveller_to_confirm_the_tour" };
 

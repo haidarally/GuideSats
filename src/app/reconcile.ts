@@ -12,12 +12,15 @@
 //     open, or the lookup fails -> left as it is (fail closed) and retried on the next tick
 //   mandate "consuming", plan B: settled -> paid. Anything else stays reserved: a plain payment cannot be cancelled.
 //   booking "locked": cancelled/expired -> refunded_expired; settled -> settled.
+//   booking "mandated" (hold mode) whose hold invoice expired before the agent paid it: H is retired and the
+//   old invoice cancelled at the guide's wallet; the traveller approves again with a NEW secret.
 //
 // Every change is a compare-and-set (mandate status, booking state). The cyclone rule, the traveller,
 // the guide, the pay path and the tick may race; each outcome is applied once, by whoever comes first.
 import { applyEvent, nextState, type Booking, type BookingEvent } from "../domain/booking";
 import { completeSpend, retireHash, revokeMandate } from "../domain/mandate";
 import type { HoldState } from "../ln/backend";
+import { invoiceExpiresAt, MIN_SECONDS_LEFT } from "../ln/invoiceCheck";
 import type { Store } from "../store/db";
 import type { PaymentDeps } from "./payments";
 
@@ -81,6 +84,7 @@ export async function reconcileBooking(d: ReconcileDeps, bookingId: string): Pro
         return "pending";
     }
   }
+  if (b.state === "mandated" && b.mode === "hold" && m?.status === "approved") return retireDeadInvoice(d, bookingId);
   if (b.state === "locked" && b.paymentHash) {
     let state: HoldState;
     try {
@@ -178,4 +182,30 @@ function resolvePaidPlanB(d: ReconcileDeps, bookingId: string, hash: string): Re
   d.store.audit(at, "paid_but_booking_changed", { bookingId, state, amountSats: cur.b.priceSats, paymentHash: hash });
   d.log.warn("paid_but_booking_changed", { bookingId, state });
   return "paid";
+}
+
+/**
+ * Hold mode: the cached hold invoice for H has expired (or will within a minute) and nothing was paid.
+ * It can never be paid, and H cannot be bound to a new hold invoice, so H is retired: the mandate goes
+ * back to the traveller, who approves again with a NEW secret. The mandate moves first (a compare-and-set
+ * from "approved", so a payment that started meanwhile wins and this does nothing); then the old invoice
+ * is cancelled at the guide's wallet, so it cannot be paid even outside the app.
+ */
+export async function retireDeadInvoice(d: ReconcileDeps, bookingId: string): Promise<ReconcileOutcome> {
+  const b = d.store.getBooking(bookingId);
+  const m = d.store.mandateForBooking(bookingId);
+  if (!b || !m || b.mode !== "hold" || b.state !== "mandated" || m.status !== "approved" || !m.paymentHash || !b.invoice) return "unchanged";
+  const at = d.clock();
+  if ((invoiceExpiresAt(b.invoice) ?? 0) - at > MIN_SECONDS_LEFT * 1000) return "unchanged";
+  const hash = m.paymentHash;
+  if (!d.store.casMandate(retireHash(m), "approved")) return "unchanged";
+  transitionBooking(d.store, bookingId, "HASH_RETIRED", at, { paymentHash: null, invoice: null });
+  let cancelled = true;
+  try {
+    await d.backend.receiver(d.guideWalletOf(b)).cancelHoldInvoice(hash);
+  } catch {
+    cancelled = false; // it has expired, or expires within a minute, on its own
+  }
+  d.store.audit(at, "hold_invoice_expired_reapproval_needed", { bookingId, paymentHash: hash, cancelled });
+  return "reapproval_needed";
 }

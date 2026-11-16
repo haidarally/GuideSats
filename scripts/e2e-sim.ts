@@ -1,4 +1,4 @@
-// `npm run e2e:sim`: the four demo scenarios, end to end, on the SIMULATED backend.
+// `npm run e2e:sim`: the demo scenarios, end to end, on the SIMULATED backend.
 // No network, no keys. Exits non-zero if any scenario does not end as expected.
 import { randomBytes } from "node:crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -9,6 +9,7 @@ import { runAgent } from "../src/agent/planner";
 import { loadFixture, replayShifted } from "../src/feeds/gdacs";
 import { encodeSimInvoice } from "../src/ln/bolt11";
 import { simNodeId } from "../src/ln/sim";
+import { invoiceExpiresAt } from "../src/ln/invoiceCheck";
 import type { GdacsFeed } from "../src/domain/cyclone";
 
 const out = (s: string) => process.stdout.write(s + "\n");
@@ -87,6 +88,41 @@ out("GuideSats end-to-end on the SIMULATED Lightning backend (regtest, in-proces
   expect(`agent waits before confirmation (${early.outcome})`, early.outcome === "waiting_for_traveller_to_confirm_the_tour");
   expect(`agent pays after confirmation (${paid.outcome})`, paid.outcome === "paid");
   expect(`guide received ${w.ledger.balance("guide_lagoon")} sats`, w.ledger.balance("guide_lagoon") === 12_000);
+}
+
+{
+  out("\n5. A hold invoice expires before the agent pays it: the traveller approves again with a NEW secret");
+  let now = Date.now();
+  const w = await buildSimWorld({ clock: () => now });
+  const agent = agentFacade(w.svc);
+  const { booking } = w.svc.proposeBooking("tour_lemorne");
+  const s1 = secret();
+  w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: s1.h, at: now });
+  const old = await runTool(agent, { tool: "request_invoice", args: { bookingId: booking.id } }); // asked for, never paid
+  const oldInvoice = old.ok ? (old.data as { invoice: string }).invoice : "";
+  now = (invoiceExpiresAt(oldInvoice) ?? now) + 1000;
+  await w.svc.reconcile(); // the watcher's tick
+  const reused = (() => {
+    try {
+      w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: s1.h, at: now });
+      return "approved!";
+    } catch (e) {
+      return (e as { code?: string }).code ?? "refused";
+    }
+  })();
+  const stateAfterExpiry = w.svc.booking(booking.id).state;
+  const s2 = secret();
+  w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: s2.h, at: now });
+  const replay = await runTool(agent, { tool: "pay_invoice", args: { bookingId: booking.id, invoice: oldInvoice } });
+  const locked = await runAgent(agent, { kind: "lock", bookingId: booking.id });
+  const oldSecret = await w.svc.settleWithPreimage(booking.id, s1.p).then(() => "settled!", (e: { code?: string }) => e.code ?? "refused");
+  await w.svc.settleWithPreimage(booking.id, s2.p);
+  expect(`booking waits for the traveller (${stateAfterExpiry})`, stateAfterExpiry === "reapproval_needed");
+  expect(`the old hash cannot be approved again (${reused})`, reused === "payment_hash_reused");
+  expect(`the old invoice is refused (${replay.ok ? "paid!" : replay.error})`, !replay.ok);
+  expect(`agent locked with the new hash (${locked.outcome})`, locked.outcome === "locked");
+  expect(`the old secret cannot settle (${oldSecret})`, oldSecret === "preimage_mismatch");
+  expect(`guide received ${w.ledger.balance("guide_lemorne")} sats, once`, w.ledger.balance("guide_lemorne") === 21_000 && w.ledger.balance("traveller") === 99_000);
 }
 
 out(failed === 0 ? "\nAll scenarios passed (SIMULATED)." : `\n${failed} check(s) failed.`);

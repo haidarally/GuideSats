@@ -35,7 +35,7 @@ function BookingCard({ b, s, t, lang, onError, refresh }: Props & { b: Booking }
       </div>
       <div class={`pill pill-${b.state}`}>{t.state[b.state] ?? b.state}</div>
       <div class="muted small">{b.mode === "hold" ? t.modeHold : t.modeAfter}</div>
-      {b.mandate && (b.state === "proposed" || b.state === "mandated") && (
+      {b.mandate && (b.state === "proposed" || b.state === "mandated" || b.state === "reapproval_needed") && (
         <div class="mandate">
           <div class="label">{t.mandate}</div>
           <dl>
@@ -60,6 +60,22 @@ function BookingCard({ b, s, t, lang, onError, refresh }: Props & { b: Booking }
             >
               {t.approve}
             </button>
+            <button class="ghost" onClick={act(() => post(`/api/traveller/bookings/${b.id}/cancel`))}>{t.cancel}</button>
+          </div>
+        </>
+      )}
+      {b.state === "reapproval_needed" && (
+        <>
+          <p class="hint">{t.reapproveHint}</p>
+          <div class="actions">
+            {b.mandate && s.now < b.mandate.notAfter ? (
+              // makeSecret replaces the old P on this phone: a new secret, a new hash.
+              <button data-testid="reapprove" onClick={act(async () => post(`/api/traveller/bookings/${b.id}/approve`, { paymentHash: await makeSecret(b.id) }))}>
+                {t.reapprove}
+              </button>
+            ) : (
+              <p class="hint">{t.windowClosed}</p>
+            )}
             <button class="ghost" onClick={act(() => post(`/api/traveller/bookings/${b.id}/cancel`))}>{t.cancel}</button>
           </div>
         </>
