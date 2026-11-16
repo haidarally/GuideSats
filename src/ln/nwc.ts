@@ -1,6 +1,7 @@
 // Nostr Wallet Connect adapter (NIP-47 + the NWC-03 hold-invoice extension) on @getalby/sdk.
-// Unit-tested with a fake client, and run by the opt-in `npm run e2e:nwc` against Alby's
-// NWC Faucet test wallets (hold methods present, one hold settled, one cancelled and refunded).
+// Unit-tested with a fake client, and run by the opt-in `npm run e2e:nwc`, `npm run demo:nwc` and
+// `npm run e2e:nwc-app` against Alby's NWC Faucet test wallets (hold methods present; holds settled,
+// and holds cancelled and refunded).
 //
 // Least privilege: the traveller's connection should allow only pay_invoice (+ get_budget,
 // get_balance); the guide's only make/settle/cancel_hold_invoice + lookup_invoice.

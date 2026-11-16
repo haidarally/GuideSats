@@ -10,7 +10,7 @@ Small modules, one job each. Tests in `tests/` mirror `src/`.
 | `src/domain/booking.ts` | Booking state machine (one transition table) | nothing |
 | `src/domain/cyclone.ts` | The cyclone rule over GDACS event lists | nothing |
 | `src/domain/holdLimit.ts` | The wallet's hold limit: `settle_deadline` as a block height or unix seconds, the 6-block margin, the lock lead | nothing |
-| `src/ln/bolt11.ts` | Payee recovery from a BOLT11 signature; SIMULATED invoice encoder | `@noble/curves`, `@scure/base` |
+| `src/ln/bolt11.ts` | Payee recovery from a BOLT11 signature; SIMULATED invoice encoder; an encoder signed with a throwaway key (the overspend demo on a real backend) | `@noble/curves`, `@scure/base` |
 | `src/ln/invoiceCheck.ts` | Decode and check an invoice before any payment | `light-bolt11-decoder`, `bolt11.ts` |
 | `src/ln/backend.ts` | The Lightning interface (payer wallet, receiver wallet) | nothing |
 | `src/ln/sim.ts` | SIMULATED backend: in-process ledger with hold invoices and a chain tip (block-height settle deadlines) | `bolt11.ts` |
@@ -22,12 +22,17 @@ Small modules, one job each. Tests in `tests/` mirror `src/`.
 | `src/app/reconcile.ts` | The reconcile step: unresolved payments resolved from the guide's wallet; the hold-limit check; expired hold invoices retired | domain, ln, store |
 | `src/app/service.ts` | Traveller, guide and agent doors; cyclone watcher; the 30 s reconcile tick | everything above |
 | `src/app/world.ts` | Wires a SIMULATED world from `fixtures/seed.json` | service, sim |
+| `src/app/nwcWorld.ts` | Wires the NWC world from `fixtures/seed-nwc.json` (one guide, small prices, real clock); cancels open holds on stop | service, any real backend |
 | `src/agent/tools.ts` | The agent's tools (closure-only facade; no approve tool) | service (facade) |
 | `src/agent/planner.ts` | Rule-based planner (no LLM needed); bounded run loop | tools |
-| `src/server/app.ts` | Hono API + SSE; host allow-list, JSON-only POST, CSP | service, agent |
-| `src/server/main.ts` | `npm run demo` on 127.0.0.1 | app, world |
+| `src/server/app.ts` | Hono API + SSE; host allow-list, JSON-only POST, CSP; demo controls per backend; one state read at a time | service, agent |
+| `src/server/watcher.ts` | The 30 s tick: cyclone rule, then the reconcile step (both backends) | service |
+| `src/server/nwcEnv.ts` | Loads `.env` on the opt-in NWC paths, or refuses to start | nothing |
+| `src/server/main.ts` | `npm run demo` (SIMULATED) and `npm run demo:nwc` (`--nwc`) on 127.0.0.1 | app, world or nwcWorld, watcher |
 | `web/src/*` | Preact PWA: traveller wallet, guide receive screen, agent console; EN + FR | API |
 | `scripts/e2e-nwc-flow.ts` | The steps of `npm run e2e:nwc` (also dry-run against the simulator in the tests) | ln, reconcile, holdLimit |
+| `scripts/e2e-nwc-app-flow.ts` | The two flows of `npm run e2e:nwc-app`, through the HTTP API only (also run offline in the tests) | API |
+| `tests/record/demo.spec.ts` | `npm run record:nwc`: the demo video, two clips at phone size (not in `npm run test:e2e`) | PWA |
 
 ## Data flow
 
@@ -144,4 +149,12 @@ For wallets without hold invoices (core NIP-47 only):
 `LightningBackend` (`src/ln/backend.ts`) is implemented twice:
 
 - `SimBackend`: deterministic, in-process, regtest-only, zero-signature invoices, labelled SIMULATED. Its chain tip advances one block every 10 minutes of the clock, and accepted holds report a block-height `settle_deadline` (24 blocks by default). Used by `npm run demo`, the tests and `npm run e2e:sim`.
-- `NwcBackend`: Nostr Wallet Connect through `@getalby/sdk` 9.0.0. Gated on `get_info` listing `make_hold_invoice`, `settle_hold_invoice` and `cancel_hold_invoice`. Used by `npm run e2e:nwc` (opt-in, needs `.env`), which was run over NWC against Alby's NWC Faucet test wallets.
+- `NwcBackend`: Nostr Wallet Connect through `@getalby/sdk` 9.0.0. Gated on `get_info` listing `make_hold_invoice`, `settle_hold_invoice` and `cancel_hold_invoice`. Used by `npm run e2e:nwc`, `npm run demo:nwc` and `npm run e2e:nwc-app` (opt-in, need `.env`), which were run over NWC against Alby's NWC Faucet test wallets.
+
+`npm run demo:nwc` wires the same service, reconcile step, hold-limit check and watcher to `NwcBackend` (`src/app/nwcWorld.ts`):
+
+- the real clock, and the block height the guide's wallet reports;
+- one guide (one guide wallet), with tours of 42 and 21 sats that start inside the lock window;
+- a 20 s wait for a hold to be accepted, polling every 0.5 s.
+
+The API refuses the demo controls that fake time or the chain. It keeps the cyclone alert as a SYNTHETIC REPLAY and the overspend push, whose forged invoices never reach a wallet.

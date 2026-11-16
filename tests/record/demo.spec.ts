@@ -5,7 +5,7 @@
 //                     replay, the refund
 // Each pause holds a key screen for the voice-over. The step times (seconds from the start of the clip)
 // go to marks.json next to each video, for the shot list. Over NWC it refuses to start when the
-// traveller has under 2 000 sats or the two tours cost more than 1 000 sats together.
+// traveller has under 2 000 sats or the tours cost more than 100 sats together (the default e2e cap).
 import { test, expect, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 
@@ -63,7 +63,7 @@ test("clip 1, flow (a): mandate, lock, meeting code, the guide is paid", async (
   const s0 = await state(page);
   if (!s0.simulated) {
     expect(s0.traveller.balanceSats ?? 0, "traveller balance under 2 000 sats: stop").toBeGreaterThanOrEqual(2000);
-    expect(s0.tours.reduce((a, t) => a + t.priceSats, 0)).toBeLessThanOrEqual(1000);
+    expect(s0.tours.reduce((a, t) => a + t.priceSats, 0)).toBeLessThanOrEqual(100);
   }
   const tour = s0.tours[0]!;
   await page.goto("/");
