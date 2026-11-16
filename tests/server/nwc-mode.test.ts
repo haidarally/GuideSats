@@ -77,7 +77,7 @@ describe("NWC mode", () => {
     const { call, ledger } = await setup();
     const { bookingId, outcome } = await lockOne(call, "tour_lemorne_heritage");
     expect(outcome).toBe("locked");
-    expect(ledger.balance("traveller")).toBe(10_000 - 120);
+    expect(ledger.balance("traveller")).toBe(10_000 - 21);
     const r = (await (await call("/api/demo/cyclone", { on: true })).json()) as { affected: string[] };
     expect(r.affected).toEqual([bookingId]);
     const s = (await (await call("/api/state")).json()) as { cyclone: { event?: { name: string } }; bookings: { state: string }[] };

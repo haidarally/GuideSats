@@ -39,12 +39,12 @@ describe("e2e:nwc-app flows (offline, NWC wiring over the simulator)", () => {
       pollMs: 10,
       waitMs: 2000,
     });
-    expect(r.settle).toMatchObject({ priceSats: 210, finalState: "settled", travellerDeltaSats: -210, guideDeltaSats: 210 });
+    expect(r.settle).toMatchObject({ priceSats: 42, finalState: "settled", travellerDeltaSats: -42, guideDeltaSats: 42 });
     expect(r.settle.holdLimit).toMatchObject({ deadlineKind: "height", spareBlocks: 3 });
-    expect(r.refund).toMatchObject({ priceSats: 120, finalState: "refunded_cyclone", travellerDeltaSats: 0, guideDeltaSats: 0 });
+    expect(r.refund).toMatchObject({ priceSats: 21, finalState: "refunded_cyclone", travellerDeltaSats: 0, guideDeltaSats: 0 });
     expect(r.overspend.map((x) => x.refused)).toEqual(["invoice_wrong_amount", "invoice_wrong_payee", "unknown tool: approve_mandate", "unknown tool: raise_cap"]);
     expect(pays).toHaveLength(2); // the two real locks; the forged invoices never reached the wallet
-    expect(ledger.balance("traveller")).toBe(10_000 - 210);
+    expect(ledger.balance("traveller")).toBe(10_000 - 42);
     expect(ledger.allHolds().filter((h) => h.state === "accepted")).toEqual([]);
     const events = lines.map((l) => JSON.parse(l).event as string);
     for (const e of ["e2e_app_start", "a_locked", "a_guide_settled", "audit:hold_limit_ok", "a_done", "b_overspend_refused", "b_locked", "b_cyclone_replay", "audit:refunded_cyclone", "b_done"]) expect(events).toContain(e);
@@ -76,14 +76,14 @@ describe("e2e:nwc-app flows (offline, NWC wiring over the simulator)", () => {
       };
       const lines: string[] = [];
       const r = await runAppFlows({ call, log: makeLogger((l) => lines.push(l)), newSecret: () => bytesToHex(randomBytes(32)), tours: { settle: "tour_lemorne", refund: "tour_lemorne_heritage" }, pollMs: 20, waitMs: 5000 });
-      expect(r.settle).toMatchObject({ finalState: "settled", travellerDeltaSats: -210, guideDeltaSats: 210 });
+      expect(r.settle).toMatchObject({ finalState: "settled", travellerDeltaSats: -42, guideDeltaSats: 42 });
       expect(r.refund).toMatchObject({ finalState: "refunded_cyclone", travellerDeltaSats: 0 });
       expect(settles).toBe(1); // never settled twice
       const events = lines.map((l) => JSON.parse(l).event as string);
       expect(events).toContain("a_lock_unclear_waiting_for_reconcile");
       expect(events).toContain("a_settle_unclear");
       expect(lines.find((l) => l.includes('"a_guide_settled"'))).toContain('"seenBy":"reconcile"');
-      expect(ledger.balance("traveller")).toBe(10_000 - 210);
+      expect(ledger.balance("traveller")).toBe(10_000 - 42);
     } finally {
       watcher.stop();
     }

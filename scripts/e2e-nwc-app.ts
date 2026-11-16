@@ -2,7 +2,8 @@
 // It starts the same world, watcher and API as `npm run demo:nwc` on 127.0.0.1, then drives two flows
 // through the HTTP API (scripts/e2e-nwc-app-flow.ts): (a) lock and settle, (b) lock and refund on the
 // synthetic cyclone replay. It refuses to start without .env, when the two tours together cost more than
-// NWC_E2E_MAX_SATS (default and maximum 1 000), or when the traveller has under 2 000 sats.
+// NWC_E2E_MAX_SATS (default 100 when empty, as for e2e:nwc; never more than 1 000), or when the traveller
+// has under 2 000 sats.
 // It never prints a connection string or the secret P. Whatever is still held at the end is cancelled.
 import { once } from "node:events";
 import { loadNwcEnvOrExit } from "../src/server/nwcEnv";
@@ -31,7 +32,7 @@ const seed = loadNwcSeed();
 const [settleTour, refundTour] = seed.tours;
 const guide = seed.guides[0];
 if (!settleTour || !refundTour || !guide) refuse("the NWC seed needs one guide and two tours");
-const max = Math.min(Number(process.env.NWC_E2E_MAX_SATS || 1000), 1000);
+const max = Math.min(Number(process.env.NWC_E2E_MAX_SATS || 100), 1000);
 const total = settleTour!.priceSats + refundTour!.priceSats;
 if (!(total <= max)) refuse(`the two flows lock ${total} sats; NWC_E2E_MAX_SATS allows ${max}`);
 

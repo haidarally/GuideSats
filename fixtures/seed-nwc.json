@@ -1,5 +1,5 @@
 {
-  "_note": "Seed data for `npm run demo:nwc` and `npm run e2e:nwc-app` (two NWC test wallets: one traveller, one guide, so one guide here). Balances come from the wallets, not from this file. Prices are small (at most 1 000 sats for all tours together). The tours start about 30 minutes after the server starts: inside the 50 min lock window, with 3 blocks to spare for the hold-limit check. Every person and business here is fictional.",
+  "_note": "Seed data for `npm run demo:nwc` and `npm run e2e:nwc-app` (two NWC test wallets: one traveller, one guide, so one guide here). Balances come from the wallets, not from this file. Prices are small: all tours together cost 63 sats, under the default NWC_E2E_MAX_SATS of 100. The tours start about 30 minutes after the server starts: inside the 50 min lock window, with 3 blocks to spare for the hold-limit check. Every person and business here is fictional.",
   "traveller": { "id": "traveller", "walletSats": 0, "label": "Demo traveller" },
   "guides": [
     { "id": "guide_lemorne", "displayName": "Kaya Treks", "area": "Le Morne", "languages": ["EN", "FR", "Kreol"], "walletSats": 0 }
@@ -10,7 +10,7 @@
       "guideId": "guide_lemorne",
       "title": { "en": "Le Morne Brabant sunrise hike", "fr": "Randonnée au lever du soleil au Morne Brabant" },
       "meetingPoint": { "en": "Le Morne trailhead car park", "fr": "Parking du départ du sentier du Morne" },
-      "priceSats": 210,
+      "priceSats": 42,
       "startInHours": 0.5,
       "durationHours": 4
     },
@@ -19,7 +19,7 @@
       "guideId": "guide_lemorne",
       "title": { "en": "Le Morne heritage walk", "fr": "Balade patrimoine au Morne" },
       "meetingPoint": { "en": "Le Morne public beach car park", "fr": "Parking de la plage publique du Morne" },
-      "priceSats": 120,
+      "priceSats": 21,
       "startInHours": 0.45,
       "durationHours": 2
     }
