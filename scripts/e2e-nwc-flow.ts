@@ -71,7 +71,7 @@ export async function runNwcFlow(d: NwcFlowDeps): Promise<Record<"settle" | "can
         state = l.state;
         if (state === "accepted") {
           // The hold limit, as the app reads it: block height or unix seconds, and whether a lock made at the
-          // earliest moment of the window (1 h before a tour) could wait for a settle 2 h after the tour start.
+          // earliest moment of the window (50 min before a tour) could wait for a settle 2 h after the tour start.
           const blockHeight = (await g.getInfo()).blockHeight;
           const deadline = parseSettleDeadline(l.settleDeadline);
           const t = now();

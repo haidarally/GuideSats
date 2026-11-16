@@ -21,12 +21,23 @@ describe("settle_deadline: block height or unix seconds", () => {
 });
 
 describe("the lock window from the measured hold limit", () => {
-  it("(24 - 6) blocks x 10 min - 2 h meeting buffer = the window opens 1 h before the tour", () => {
+  it("(24 - 6 - 1) blocks x 10 min - 2 h meeting buffer = the window opens 50 min before the tour", () => {
     expect(MEASURED_HOLD_LIMIT_BLOCKS).toBe(24);
     expect(SAFETY_MARGIN_BLOCKS).toBe(6);
-    expect(lockLeadMs()).toBe(HOUR);
-    expect(lockLeadMs(144, 6, 2 * HOUR)).toBe(21 * HOUR); // a wallet with a 1-day limit would allow more
+    expect(lockLeadMs()).toBe(50 * 60_000);
+    expect(lockLeadMs(144, 6, 2 * HOUR)).toBe(20 * HOUR + 50 * 60_000); // a wallet with a 1-day limit would allow more
     expect(() => lockLeadMs(18)).toThrow(RangeError); // 12 blocks left cannot cover a 2 h buffer plus any lead
+  });
+
+  it("a lock at the earliest moment of the window keeps a block to spare on a 24-block wallet", () => {
+    const tourStart = 1_800_000_000_000;
+    const now = tourStart - lockLeadMs();
+    const fit = holdFits({ settleDeadline: 976_127, blockHeight: 976_103, now, settleBy: tourStart + 2 * HOUR });
+    expect(fit.ok).toBe(true);
+    if (fit.ok) expect(fit.spareBlocks).toBe(1);
+    // ...so a block landing between the accept and the check does not cancel a good hold.
+    const late = holdFits({ settleDeadline: 976_127, blockHeight: 976_104, now, settleBy: tourStart + 2 * HOUR });
+    expect(late.ok).toBe(true);
   });
 });
 

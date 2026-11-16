@@ -25,13 +25,18 @@ export const MEASURED_HOLD_LIMIT_BLOCKS = 24;
 export const SAFETY_MARGIN_BLOCKS = 6;
 /** The guide may settle up to this long after the tour start (the traveller and the guide meet a little late). */
 export const MEETING_BUFFER_MS = 2 * 3_600_000;
+/**
+ * One block of slack in the window, so a lock at its earliest moment still fits with a block to spare if a
+ * block lands between the accept and the check (without it, that lock fits with exactly 0 spare blocks).
+ */
+export const WINDOW_SLACK_BLOCKS = 1;
 
 /**
- * How long before the tour the agent may lock: (hold limit - margin) blocks at 10 minutes, minus the
- * meeting buffer. With the measured 24 blocks: (24 - 6) x 10 min - 2 h = 1 h.
+ * How long before the tour the agent may lock: (hold limit - margin - slack) blocks at 10 minutes, minus the
+ * meeting buffer. With the measured 24 blocks: (24 - 6 - 1) x 10 min - 2 h = 50 min.
  */
-export function lockLeadMs(holdLimitBlocks = MEASURED_HOLD_LIMIT_BLOCKS, marginBlocks = SAFETY_MARGIN_BLOCKS, meetingBufferMs = MEETING_BUFFER_MS): number {
-  const lead = (holdLimitBlocks - marginBlocks) * BLOCK_MS - meetingBufferMs;
+export function lockLeadMs(holdLimitBlocks = MEASURED_HOLD_LIMIT_BLOCKS, marginBlocks = SAFETY_MARGIN_BLOCKS, meetingBufferMs = MEETING_BUFFER_MS, slackBlocks = WINDOW_SLACK_BLOCKS): number {
+  const lead = (holdLimitBlocks - marginBlocks - slackBlocks) * BLOCK_MS - meetingBufferMs;
   if (!(lead > 0)) throw new RangeError("the hold limit is too short for the margin and the meeting buffer");
   return lead;
 }

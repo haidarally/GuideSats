@@ -43,9 +43,9 @@ function withReceiver(w: { svc: unknown; backend: LightningBackend }, f: (r: Rec
 }
 
 describe("the lock window", () => {
-  it("the agent cannot lock days ahead: the mandate opens 1 h before the tour", async () => {
+  it("the agent cannot lock days ahead: the mandate opens 50 min before the tour", async () => {
     const { w, booking, mandate, h } = await farTour();
-    expect(mandate.notBefore).toBe(booking.tourStart - HOUR); // (24 - 6) blocks x 10 min - 2 h meeting buffer
+    expect(mandate.notBefore).toBe(booking.tourStart - 50 * 60_000); // (24 - 6 - 1) blocks x 10 min - 2 h meeting buffer
     // No hold invoice before the window (it would expire before the agent may pay it, and H cannot be reused)...
     await expect(w.svc.requestInvoice(booking.id)).rejects.toThrow("lock_window_not_open");
     // ...and a hold invoice obtained some other way is refused by the mandate.
@@ -54,12 +54,12 @@ describe("the lock window", () => {
     expect(w.ledger.balance("traveller")).toBe(120_000);
   });
 
-  it("a lock at the earliest moment fits the 24-block hold exactly and still settles 2 h after the tour start", async () => {
+  it("a lock at the earliest moment fits the 24-block hold with a block to spare and still settles 2 h after the tour start", async () => {
     const { w, booking, mandate, p, setNow } = await farTour();
     setNow(mandate.notBefore);
     const inv = await w.svc.requestInvoice(booking.id);
     expect(await w.svc.payWithinMandate(booking.id, inv)).toMatchObject({ ok: true, state: "locked" });
-    expect(w.svc.audit().find((a) => a.event === "hold_limit_ok")?.fields).toMatchObject({ deadlineKind: "height", spareBlocks: 0 });
+    expect(w.svc.audit().find((a) => a.event === "hold_limit_ok")?.fields).toMatchObject({ deadlineKind: "height", spareBlocks: 1 });
     expect(w.svc.booking(booking.id).holdCheckedAt).toBe(mandate.notBefore);
     setNow(booking.tourStart + 2 * HOUR - 60_000); // the guide and the traveller meet late
     expect(await w.svc.reconcile()).toEqual([]);
@@ -106,7 +106,7 @@ describe("the hold limit the guide's wallet reports", () => {
     expect(w.svc.mandate(booking.id)?.status).toBe("used"); // the single use is spent: no second lock
     expect(w.ledger.balance("traveller")).toBe(120_000);
     expect(w.ledger.allHolds().filter((x) => x.state === "accepted")).toEqual([]);
-    expect(w.svc.audit().find((a) => a.event === "hold_limit_too_short")?.fields).toMatchObject({ reason: "too_short", deadlineKind: "height", spareBlocks: -12 });
+    expect(w.svc.audit().find((a) => a.event === "hold_limit_too_short")?.fields).toMatchObject({ reason: "too_short", deadlineKind: "height", spareBlocks: -11 });
   });
 
   it("with 12 blocks, a lock 30 min before the tour fits once the meeting buffer is zero", async () => {

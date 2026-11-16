@@ -126,7 +126,7 @@ A guide's wallet cancels an accepted hold by itself at its `settle_deadline`. On
 
 - reads `settle_deadline` as unix seconds at 500 000 000 and above, as a block height below (the nLockTime rule), and refuses 10 000 000 000 and above (most likely milliseconds) as no deadline;
 - compares heights directly, keeping a chosen margin of 6 blocks, and converts a wait into blocks at 10 minutes each (rounded up) only where a clock time is unavoidable;
-- sets the lock window: (24 − 6) × 10 min − 2 h meeting buffer = from 1 h before the tour.
+- sets the lock window: (24 − 6 − 1 block of slack) × 10 min − 2 h meeting buffer = from 50 min before the tour.
 
 After every accept, the app checks that the planned settle (tour start + 2 h) comes at least 6 blocks before the deadline; if not, or if the wallet reports no deadline (or no block height for a height deadline), the hold is cancelled at once and the booking says `refunded_hold_limit`.
 

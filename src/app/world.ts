@@ -57,7 +57,7 @@ export async function buildSimWorld(opts: SimWorldOptions = {}) {
   const svc = new BookingService(store, backend, clock, opts.feed ?? (() => ({ type: "FeatureCollection", features: [] })), log, tours, guides, {
     travellerWalletId: seed.traveller.id,
     // The app does not know a wallet's hold limit in advance: the window comes from the measured one
-    // (1 h before the tour), and each accepted hold is checked against the deadline its wallet reports.
+    // (50 min before the tour), and each accepted hold is checked against the deadline its wallet reports.
     lockLeadHours: lockLeadMs() / 3_600_000,
     invoiceExpirySecs: 600,
     acceptTimeoutMs: 2000,

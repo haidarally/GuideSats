@@ -117,7 +117,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 ## Constraints (honest)
 
 - **Hold invoices are young.** NWC-03 is a draft and few wallets support it. For wallets without it, plan B (pay on completion, core NIP-47 only) is built in. No money moves before the tour, and a cyclone means nothing is paid. It gives the guide less certainty than a hold.
-- **Hold time is short.** The guide's wallet cancels an accepted hold by itself at its `settle_deadline`. On Alby's NWC Faucet test wallets that deadline is a block height 24 blocks ahead, about 4 h (measured on 16 Nov 2026). So at booking only the approved mandate is recorded, and the agent may lock the sats only from **1 h before the tour**: (24 blocks − a 6-block margin) × 10 minutes, minus a 2 h meeting buffer. Every accepted hold is checked against the deadline its own wallet reports. If it could not last until 2 h after the tour start with 6 blocks to spare, it is cancelled at once and the traveller refunded. Blocks arrive at random: if they come much faster than average, a wallet can still cancel a hold before a very late meeting, and the traveller is then refunded.
+- **Hold time is short.** The guide's wallet cancels an accepted hold by itself at its `settle_deadline`. On Alby's NWC Faucet test wallets that deadline is a block height 24 blocks ahead, about 4 h (measured on 16 Nov 2026). So at booking only the approved mandate is recorded, and the agent may lock the sats only from **50 min before the tour**: (24 blocks − a 6-block margin − 1 block of slack) × 10 minutes, minus a 2 h meeting buffer. Every accepted hold is checked against the deadline its own wallet reports. If it could not last until 2 h after the tour start with 6 blocks to spare, it is cancelled at once and the traveller refunded. Blocks arrive at random: if they come much faster than average, a wallet can still cancel a hold before a very late meeting, and the traveller is then refunded.
 - **An expired hold invoice needs the traveller again.** A hold invoice is bound to the traveller's hash H. If it expires before the agent pays it, the traveller approves again and the phone makes a new secret; the old one is never accepted again.
 - **Wallet budgets (NWC-13) are optional.** When a wallet offers no budget, the app's mandate is the only cap.
 - **The two faucet wallets share one node key.** They are sub-wallets of one Alby Hub, so the payee check (the key recovered from the invoice signature must be the guide's) cannot tell them apart, and the faucet run does not exercise it. It is covered by unit and property tests with distinct keys. Real guides on their own nodes have distinct keys.
@@ -142,12 +142,6 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 4. A **Kreol Morisien** user interface, and an optional LLM planner behind the same tools.
 5. Camera QR scanning on browsers without `BarcodeDetector` (a small decoder library).
 
-## Still needed before submission (team steps)
-
-- The **public repository** and its final name ("GuideSats" is a working name).
-- The **3-minute demo video** (script: [docs/demo-script.md](docs/demo-script.md)).
-- **Joining the event** and submitting on Devpost.
-
 ## Run over NWC (opt-in)
 
 ```bash
@@ -162,7 +156,7 @@ It was run over NWC against Alby's NWC Faucet test wallets on 16 Nov 2026. Their
 - **Cancel:** a 10-sat hold was accepted, then cancelled, and the traveller was refunded (balance change 0). The traveller's `pay_invoice` call failed (NIP-47 code `INTERNAL`) instead of returning, so the outcome is read back from the guide's wallet with `lookup_invoice`. That is what the reconcile step does.
 - **Hold limit:** `lookup_invoice` gave `settle_deadline` 976121 while `get_info` gave `block_height` 976097: a block height 24 blocks ahead, about 4 h. The lock window above is derived from it.
 - Both wallets report the same node key (see Constraints).
-- A second run the same day read each hold back with `lookup_invoice` and mapped it with the same function the reconcile step uses: the cancelled hold came out `released` (wallet state cancelled, traveller balance change 0, while `pay_invoice` again failed with `INTERNAL`). The deadline was again 24 blocks ahead (976127 against 976103); a lock made at the earliest moment of the window fits it with 0 blocks to spare beyond the margin.
+- A second run the same day read each hold back with `lookup_invoice` and mapped it with the same function the reconcile step uses: the cancelled hold came out `released` (wallet state cancelled, traveller balance change 0, while `pay_invoice` again failed with `INTERNAL`). The deadline was again 24 blocks ahead (976127 against 976103); a lock made at the earliest moment of the window then fitted with 0 blocks to spare beyond the margin, so the window now keeps 1 block of slack.
 
 That run drives the wallets directly. The booking service itself (mandate, reconcile step, hold-limit check, re-approval) has so far run only on the SIMULATED backend.
 
