@@ -44,7 +44,7 @@ describe("the lock window", () => {
     const inv = await w.svc.requestInvoice(booking.id);
     expect(await w.svc.payWithinMandate(booking.id, inv)).toMatchObject({ ok: true, state: "locked" });
     now = booking.tourStart + 2 * HOUR - 60_000; // the guide and the traveller meet late
-    expect(await w.svc.reconcileHolds()).toEqual([]);
+    expect(await w.svc.reconcile()).toEqual([]);
     await w.svc.settleWithPreimage(booking.id, p);
     expect(w.ledger.balance("guide_lemorne")).toBe(21_000);
   });
@@ -61,7 +61,7 @@ describe("the lock window", () => {
     const inv = await w.svc.requestInvoice(booking.id);
     expect(await w.svc.payWithinMandate(booking.id, inv)).toEqual({ ok: true, state: "locked", amountSats: 21_000 });
     now = booking.tourStart; // the meeting: the 12 h hold has not timed out
-    expect(await w.svc.reconcileHolds()).toEqual([]);
+    expect(await w.svc.reconcile()).toEqual([]);
     await w.svc.settleWithPreimage(booking.id, p);
     expect(w.ledger.balance("guide_lemorne")).toBe(21_000);
   });

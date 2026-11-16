@@ -15,6 +15,7 @@ export interface Mandate {
   notAfter: number; // ms epoch: latest moment the agent may pay
   paymentHash: string | null; // H = SHA-256(P), bound at approval time (hold mode)
   requireHash: boolean; // hold mode: true. Plan B (pay on completion): false, the guide's wallet picks the hash
+  retiredHashes: string[]; // hold mode: earlier H values whose hold invoice died unpaid; never accepted again
   status: MandateStatus;
   approvedAt: number | null;
 }
@@ -74,7 +75,7 @@ export function draftMandate(input: DraftMandateInput): Mandate {
   if (!Number.isFinite(input.notBefore) || !Number.isFinite(input.notAfter) || input.notBefore >= input.notAfter) {
     throw new MandateError("time window must have notBefore < notAfter");
   }
-  return { ...input, requireHash: input.requireHash ?? true, paymentHash: null, status: "pending_approval", approvedAt: null };
+  return { ...input, requireHash: input.requireHash ?? true, paymentHash: null, retiredHashes: [], status: "pending_approval", approvedAt: null };
 }
 
 export function approveMandate(m: Mandate, approval: TravellerApproval): Mandate {
@@ -82,8 +83,21 @@ export function approveMandate(m: Mandate, approval: TravellerApproval): Mandate
   if (m.status !== "pending_approval") throw new MandateError(`cannot approve a mandate in status ${m.status}`);
   if (m.requireHash && (approval.paymentHash === null || !HEX32.test(approval.paymentHash))) throw new MandateError("payment hash must be 32-byte hex");
   if (!m.requireHash && approval.paymentHash !== null) throw new MandateError("this mandate does not bind a payment hash");
+  if (approval.paymentHash !== null && (m.retiredHashes ?? []).includes(approval.paymentHash)) throw new MandateError("payment hash was used before: make a new secret");
   if (approval.at >= m.notAfter) throw new MandateError("mandate window already closed");
   return { ...m, paymentHash: approval.paymentHash, status: "approved", approvedAt: approval.at };
+}
+
+/**
+ * Hold mode: the hold invoice for H can never be paid (it expired or was cancelled before any lock).
+ * The mandate goes back to "pending_approval" and H is retired for good: only the traveller can approve
+ * it again, with a NEW secret. From "approved" (nothing in flight) or from "consuming" (only once the
+ * guide's wallet reports the hold dead; see app/reconcile.ts).
+ */
+export function retireHash(m: Mandate): Mandate {
+  if (!m.requireHash || m.paymentHash === null) throw new MandateError("only a hold-mode mandate with a bound hash can retire it");
+  if (m.status !== "approved" && m.status !== "consuming") throw new MandateError(`cannot retire the hash of a mandate in status ${m.status}`);
+  return { ...m, status: "pending_approval", paymentHash: null, approvedAt: null, retiredHashes: [...(m.retiredHashes ?? []), m.paymentHash] };
 }
 
 export function revokeMandate(m: Mandate): Mandate {

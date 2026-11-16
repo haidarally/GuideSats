@@ -258,9 +258,9 @@ export function createApp(ctx: ServerContext) {
     const w = ctx.world();
     if (!w.advance) return c.json({ error: "no clock control on this backend" }, 403);
     w.advance(hours * 3_600_000);
-    const expired = await w.svc.reconcileHolds();
+    const reconciled = await w.svc.reconcile();
     broadcast("update", { type: "clock" });
-    return c.json({ ok: true, now: w.svc.now(), expired });
+    return c.json({ ok: true, now: w.svc.now(), reconciled });
   });
 
   app.post("/api/demo/reset", async (c) => {

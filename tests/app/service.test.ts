@@ -76,7 +76,7 @@ describe("BookingService on the SIMULATED backend", () => {
     const w = await world();
     const { booking } = await lockedBooking(w);
     w.tick(13 * HOUR);
-    expect(await w.svc.reconcileHolds()).toEqual([booking.id]);
+    expect(await w.svc.reconcile()).toEqual([{ bookingId: booking.id, outcome: "refunded_expired" }]);
     expect(w.svc.booking(booking.id).state).toBe("refunded_expired");
     expect(w.ledger.balance("traveller")).toBe(120_000);
   });

@@ -135,7 +135,7 @@ describe("property: no tool-call sequence pays above the cap or outside the paye
               await runTool(f, { tool: "propose_booking", args: { tourId: tours[c.tour]! } });
               break;
             case "reconcile":
-              await w.svc.reconcileHolds();
+              await w.svc.reconcile();
               break;
             case "request":
               await runTool(f, { tool: "request_invoice", args: { bookingId: ids[c.b]! } });

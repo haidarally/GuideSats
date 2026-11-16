@@ -33,7 +33,8 @@ async function refreshLive() {
   }
 }
 
-// The watcher: every 30 s, apply the cyclone rule (cancel locked holds = refund) and mark expired holds.
+// The watcher: every 30 s, apply the cyclone rule (cancel locked holds = refund), then the reconcile step
+// (src/app/reconcile.ts) resolves every unresolved payment from the guide's wallet.
 async function tick() {
   await refreshLive();
   try {
@@ -42,7 +43,7 @@ async function tick() {
     log.warn("cyclone_rule_failed", { err: e });
   }
   try {
-    await world.svc.reconcileHolds();
+    await world.svc.reconcile();
   } catch (e) {
     log.warn("reconcile_failed", { err: e });
   }

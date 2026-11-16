@@ -2,14 +2,16 @@
 // Order of checks: booking state -> mandate exists -> cyclone rule -> invoice decode and
 // check (network, exact amount, hash = H, expiry, payee) -> mandate (cap, payee, window,
 // single use) -> atomic reserve of the mandate -> pay -> wait until the guide's wallet
-// reports the hold as accepted.
+// reports the hold as accepted. Anything short of a clear answer goes to the reconcile step
+// (app/reconcile.ts), which decides from the guide's wallet, never from error text.
 import { cycloneVerdict, type GdacsFeed } from "../domain/cyclone";
-import { applyEvent, nextState, type Booking, type BookingEvent } from "../domain/booking";
+import type { Booking } from "../domain/booking";
 import { beginSpend, checkSpend, completeSpend, releaseSpend, revokeMandate, type Mandate } from "../domain/mandate";
 import { checkInvoice } from "../ln/invoiceCheck";
 import type { LightningBackend, PayOutcome, ReceiverWallet } from "../ln/backend";
 import type { Store } from "../store/db";
 import type { Logger } from "../log/redact";
+import { reconcileBooking, resolveAccepted, transitionBooking } from "./reconcile";
 
 export interface PaymentDeps {
   store: Store;
@@ -24,19 +26,7 @@ export interface PaymentDeps {
   onFinal?: (bookingId: string, outcome: PayOutcome) => void;
 }
 
-export type PayResult = { ok: true; state: "locked" | "paid"; amountSats: number } | { ok: false; reason: string };
-
-/**
- * Applies `event` to the booking as it is NOW in the store, with an atomic compare-and-set on its state.
- * Returns null when the event is not legal from the current state or someone moved the booking first.
- * Every transition made after an await goes through here, so two actors can never both apply one.
- */
-export function transitionBooking(store: Store, id: string, event: BookingEvent, at: number, patch: Partial<Booking> = {}): Booking | null {
-  const b = store.getBooking(id);
-  if (!b || nextState(b.state, event) === null) return null;
-  const next: Booking = { ...applyEvent(b, event, at), ...patch };
-  return store.casBooking(next, b.state) ? next : null;
-}
+export type PayResult = { ok: true; state: "locked" | "settled" | "paid"; amountSats: number } | { ok: false; reason: string };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,6 +48,15 @@ async function waitAccepted(receiver: ReceiverWallet, hash: string, outcome: () 
 /** Nothing left the wallet: re-arm the single use if the booking is still payable, else close the mandate. */
 function giveBack(d: PaymentDeps, bookingId: string, consuming: Mandate): Mandate {
   return d.store.getBooking(bookingId)?.state === "mandated" ? releaseSpend(consuming) : revokeMandate(consuming);
+}
+
+/** What the caller is told, read from the store after the pay path or the reconcile step resolved (or not). */
+function resultNow(d: PaymentDeps, bookingId: string, amountSats: number): PayResult {
+  const b = d.store.getBooking(bookingId)!;
+  if (b.state === "locked" || b.state === "settled" || b.state === "paid") return { ok: true, state: b.state, amountSats };
+  if (d.store.mandateForBooking(bookingId)?.status === "consuming") return { ok: false, reason: "payment_unknown_needs_reconcile" };
+  if (b.state === "reapproval_needed") return { ok: false, reason: "hold_cancelled_reapproval_needed" };
+  return { ok: false, reason: `booking_changed_during_payment:${b.state}` };
 }
 
 export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoice: string): Promise<PayResult> {
@@ -115,28 +114,27 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
     const o = await payer.payInvoice(invoice);
     const at = d.clock();
     if (o.status === "settled") {
-      d.store.casMandate(completeSpend(consuming), "consuming");
-      const fresh = d.store.getBooking(bookingId)!;
-      if (fresh.state !== "mandated") {
+      d.onFinal?.(bookingId, o);
+      if (!d.store.casMandate(completeSpend(consuming), "consuming")) return resultNow(d, bookingId, spend.amountSats); // the reconcile step was first
+      if (!transitionBooking(d.store, bookingId, "PAY_ON_COMPLETION", at)) {
         // Cannot happen through the service (cancel and the cyclone rule wait for an in-flight payment),
         // but never throw after money moved: record it loudly instead.
-        d.store.audit(at, "paid_but_booking_changed", { bookingId, state: fresh.state, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
-        d.log.warn("paid_but_booking_changed", { bookingId, state: fresh.state });
-        d.onFinal?.(bookingId, o);
-        return { ok: false, reason: `paid_but_booking_changed:${fresh.state}` };
+        const state = d.store.getBooking(bookingId)?.state;
+        d.store.audit(at, "paid_but_booking_changed", { bookingId, state, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
+        d.log.warn("paid_but_booking_changed", { bookingId, state });
+        return { ok: false, reason: `paid_but_booking_changed:${state}` };
       }
-      d.store.putBooking(applyEvent(fresh, "PAY_ON_COMPLETION", at));
       d.store.audit(at, "paid_on_completion", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
-      d.onFinal?.(bookingId, o);
       return { ok: true, state: "paid", amountSats: spend.amountSats };
     }
     if (o.status === "failed") {
-      d.store.casMandate(giveBack(d, bookingId, consuming), "consuming");
+      if (!d.store.casMandate(giveBack(d, bookingId, consuming), "consuming")) return resultNow(d, bookingId, spend.amountSats);
       d.store.audit(at, "pay_failed", { bookingId, error: o.error });
       return { ok: false, reason: `payment_failed:${o.error}` };
     }
     d.store.audit(at, "pay_unknown", { bookingId });
-    return { ok: false, reason: "payment_unknown_needs_reconcile" };
+    await reconcileBooking(d, bookingId); // once now; the watcher's tick keeps trying
+    return resultNow(d, bookingId, spend.amountSats);
   }
 
   let outcome: PayOutcome | null = null;
@@ -147,42 +145,21 @@ export async function payWithinMandate(d: PaymentDeps, bookingId: string, invoic
   final.then((o) => d.onFinal?.(bookingId, o)).catch(() => undefined);
 
   const accepted = await waitAccepted(receiver, spend.paymentHash, () => outcome, d.acceptTimeoutMs ?? 15_000, d.pollMs ?? 250);
-  const at = d.clock();
   if (accepted) {
-    d.store.casMandate(completeSpend(consuming), "consuming");
-    const fresh = d.store.getBooking(bookingId)!;
-    if (fresh.state !== "mandated") {
-      // The booking moved on while the lock was in flight (defence in depth: the service refuses a
-      // traveller cancel during a payment, and the cyclone rule cancels the hold itself). Give the sats back now.
-      let cancelled = true;
-      try {
-        await receiver.cancelHoldInvoice(spend.paymentHash);
-      } catch {
-        cancelled = false; // the hold still times out at its settle deadline
-      }
-      d.store.audit(at, "lock_aborted_booking_changed", { bookingId, state: fresh.state, cancelled, paymentHash: spend.paymentHash });
-      d.log.warn("lock_aborted_booking_changed", { bookingId, state: fresh.state, cancelled });
-      return { ok: false, reason: `booking_changed_during_payment:${fresh.state}` };
-    }
-    d.store.putBooking({ ...applyEvent(fresh, "LOCK", at), invoice });
-    d.store.audit(at, "locked", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
-    d.log.info("locked", { bookingId, amountSats: spend.amountSats, paymentHash: spend.paymentHash });
-    return { ok: true, state: "locked", amountSats: spend.amountSats };
+    await resolveAccepted(d, bookingId, spend.paymentHash, invoice);
+    return resultNow(d, bookingId, spend.amountSats);
   }
+  const at = d.clock();
   const o = outcome as PayOutcome | null;
   if (o && o.status === "failed") {
-    // Definite failure: nothing left the wallet, so the traveller's single use is given back.
-    d.store.casMandate(giveBack(d, bookingId, consuming), "consuming");
+    // Definite failure (a NIP-47 refusal code from the wallet): nothing left it, so the single use is given back.
+    if (!d.store.casMandate(giveBack(d, bookingId, consuming), "consuming")) return resultNow(d, bookingId, spend.amountSats);
     d.store.audit(at, "pay_failed", { bookingId, error: o.error });
     return { ok: false, reason: `payment_failed:${o.error}` };
   }
-  if (o && o.status === "refunded") {
-    // The hold was cancelled before we saw it accepted (e.g. the cyclone rule): the sats are back.
-    d.store.casMandate(giveBack(d, bookingId, consuming), "consuming");
-    d.store.audit(at, "pay_refunded", { bookingId });
-    return { ok: false, reason: "payment_refunded" };
-  }
-  // Unknown (timeout): fail closed. The mandate stays reserved; nobody can pay twice.
-  d.store.audit(at, "pay_unknown", { bookingId });
-  return { ok: false, reason: "payment_unknown_needs_reconcile" };
+  // Refunded, unknown, or no answer in time: fail closed (the mandate stays reserved, nobody can pay twice)
+  // and look the hold up once now. The watcher's 30 s tick keeps trying until the guide's wallet answers.
+  d.store.audit(at, o?.status === "refunded" ? "pay_refunded" : "pay_unknown", { bookingId });
+  await reconcileBooking(d, bookingId);
+  return resultNow(d, bookingId, spend.amountSats);
 }

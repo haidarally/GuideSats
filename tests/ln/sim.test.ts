@@ -87,3 +87,20 @@ describe("SIMULATED backend", () => {
     if (o.status === "settled") await expect(g.settleHoldInvoice(o.preimage!)).rejects.toThrow();
   });
 });
+
+describe("SIMULATED backend: cancel is idempotent on a dead hold", () => {
+  it("cancelling a cancelled or expired hold is a no-op; a settled one cannot be cancelled", async () => {
+    const { be, advance } = setup();
+    const g = be.receiver("guide");
+    await g.makeHoldInvoice({ amountSats: 1000, paymentHash: H, description: "x", expirySecs: 600 });
+    advance(601_000);
+    await g.cancelHoldInvoice(H); // expired
+    expect((await g.lookupInvoice(H)).state).toBe("expired");
+    const P2 = "00".repeat(31) + "02";
+    const H2 = bytesToHex(sha256(hexToBytes(P2)));
+    const { invoice } = await g.makeHoldInvoice({ amountSats: 1000, paymentHash: H2, description: "x", expirySecs: 600 });
+    void be.payer("traveller").payInvoice(invoice);
+    await g.settleHoldInvoice(P2);
+    await expect(g.cancelHoldInvoice(H2)).rejects.toThrow("settled");
+  });
+});

@@ -12,7 +12,8 @@ import type { LightningBackend, PayOutcome } from "../ln/backend";
 import { invoiceExpiresAt } from "../ln/invoiceCheck";
 import type { Logger } from "../log/redact";
 import type { Store } from "../store/db";
-import { payWithinMandate, transitionBooking, type PayResult } from "./payments";
+import { payWithinMandate, type PaymentDeps, type PayResult } from "./payments";
+import { reconcileBooking, transitionBooking, type ReconcileOutcome } from "./reconcile";
 
 export interface Tour {
   id: string;
@@ -294,19 +295,18 @@ export class BookingService {
     return { verdicts: out };
   }
 
-  /** Locked bookings whose hold timed out are marked refunded (the wallet already returned the sats). */
-  async reconcileHolds(): Promise<string[]> {
-    const changed: string[] = [];
+  /**
+   * The reconcile step, on the watcher's tick: every unresolved payment (a reserved mandate, a locked hold)
+   * is resolved from what the guide's wallet reports. Idempotent; one failing wallet call never stops the others.
+   */
+  async reconcile(): Promise<{ bookingId: string; outcome: ReconcileOutcome }[]> {
+    const changed: { bookingId: string; outcome: ReconcileOutcome }[] = [];
     for (const { id } of this.store.listBookings()) {
-      const b = this.store.getBooking(id);
-      if (!b || b.state !== "locked" || !b.paymentHash) continue;
       try {
-        const s = await this.backend.receiver(b.guideId).lookupInvoice(b.paymentHash);
-        // The cyclone rule may have moved it during the await: the compare-and-set then fails.
-        if ((s.state === "expired" || s.state === "cancelled") && this.transition(id, "HOLD_EXPIRED", this.clock())) {
-          this.store.audit(this.clock(), "refunded_expired", { bookingId: id });
-          changed.push(id);
-        }
+        const outcome = await reconcileBooking(this.paymentDeps(), id);
+        if (outcome === "unchanged" || outcome === "pending") continue;
+        changed.push({ bookingId: id, outcome });
+        this.emit({ type: "booking", booking: this.booking(id) });
       } catch (e) {
         this.log.warn("reconcile_failed", { bookingId: id, err: e });
       }
@@ -343,26 +343,26 @@ export class BookingService {
     return made.invoice;
   }
 
-  payWithinMandate(bookingId: string, invoice: string): Promise<PayResult> {
-    return payWithinMandate(
-      {
-        store: this.store,
-        backend: this.backend,
-        clock: this.clock,
-        feed: this.feed,
-        log: this.log,
-        travellerWalletId: this.cfg.travellerWalletId,
-        guideWalletOf: (b) => b.guideId,
-        acceptTimeoutMs: this.cfg.acceptTimeoutMs,
-        pollMs: this.cfg.pollMs,
-        onFinal: (id: string, o: PayOutcome) => {
-          this.log.info("payment_final", { bookingId: id, status: o.status });
-          this.emit({ type: "wallet" });
-        },
+  private paymentDeps(): PaymentDeps {
+    return {
+      store: this.store,
+      backend: this.backend,
+      clock: this.clock,
+      feed: this.feed,
+      log: this.log,
+      travellerWalletId: this.cfg.travellerWalletId,
+      guideWalletOf: (b) => b.guideId,
+      acceptTimeoutMs: this.cfg.acceptTimeoutMs,
+      pollMs: this.cfg.pollMs,
+      onFinal: (id: string, o: PayOutcome) => {
+        this.log.info("payment_final", { bookingId: id, status: o.status });
+        this.emit({ type: "wallet" });
       },
-      bookingId,
-      invoice,
-    ).then((r) => {
+    };
+  }
+
+  payWithinMandate(bookingId: string, invoice: string): Promise<PayResult> {
+    return payWithinMandate(this.paymentDeps(), bookingId, invoice).then((r) => {
       const b = this.store.getBooking(bookingId);
       if (b) this.emit({ type: "booking", booking: b });
       return r;

@@ -16,7 +16,7 @@ const base: Booking = {
   history: [],
 };
 
-const ALL_EVENTS: BookingEvent[] = ["APPROVE_MANDATE", "LOCK", "SETTLE", "CYCLONE_CANCEL", "HOLD_EXPIRED", "PAY_ON_COMPLETION", "TRAVELLER_CANCEL"];
+const ALL_EVENTS: BookingEvent[] = ["APPROVE_MANDATE", "LOCK", "SETTLE", "CYCLONE_CANCEL", "HOLD_EXPIRED", "PAY_ON_COMPLETION", "TRAVELLER_CANCEL", "HASH_RETIRED"];
 const ALL_STATES = Object.keys(TRANSITIONS) as BookingState[];
 
 describe("booking state machine", () => {
@@ -46,6 +46,16 @@ describe("booking state machine", () => {
     const l = applyEvent(applyEvent(base, "APPROVE_MANDATE", 1), "LOCK", 2);
     expect(() => applyEvent(l, "TRAVELLER_CANCEL", 3)).toThrow("illegal transition");
   });
+  it("hold mode: a dead hold invoice sends the booking back to the traveller for a new secret", () => {
+    const m = applyEvent(base, "APPROVE_MANDATE", 1);
+    const r = applyEvent(m, "HASH_RETIRED", 2);
+    expect(r.state).toBe("reapproval_needed");
+    expect(applyEvent(r, "APPROVE_MANDATE", 3).state).toBe("mandated");
+    expect(applyEvent(r, "TRAVELLER_CANCEL", 3).state).toBe("cancelled");
+    expect(applyEvent(r, "CYCLONE_CANCEL", 3).state).toBe("skipped_cyclone");
+    expect(() => applyEvent(r, "LOCK", 3)).toThrow(TransitionError); // no lock without a new approval
+    expect(() => applyEvent({ ...m, mode: "on_completion" }, "HASH_RETIRED", 2)).toThrow(TransitionError);
+  });
   it("money can only be locked after the mandate is approved", () => {
     expect(nextState("proposed", "LOCK")).toBeNull();
     expect(nextState("proposed", "SETTLE")).toBeNull();
@@ -69,6 +79,6 @@ describe("booking state machine", () => {
           expect(applyEvent(b, e, 0).state).toBe(to);
         }
       }
-    expect(legal).toBe(10);
+    expect(legal).toBe(14);
   });
 });

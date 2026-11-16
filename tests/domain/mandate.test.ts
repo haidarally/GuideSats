@@ -8,6 +8,7 @@ import {
   MAX_CAP_SATS,
   MandateError,
   releaseSpend,
+  retireHash,
   revokeMandate,
   type Mandate,
   type SpendRequest,
@@ -120,5 +121,26 @@ describe("plan B mandate (no hash: the guide's wallet picks it after the tour)",
     expect(checkSpend(a, { ...ok, payeePubkey: OTHER })).toEqual({ ok: false, reason: "wrong_payee" });
     expect(checkSpend(a, { ...ok, now: T0 + 2 * HOUR })).toEqual({ ok: false, reason: "too_late" });
     expect(checkSpend(completeSpend(beginSpend(a, ok)), ok)).toEqual({ ok: false, reason: "already_used" });
+  });
+});
+
+describe("retireHash (hold mode: the hold invoice for H died unpaid)", () => {
+  const H2 = "cd".repeat(32);
+  it("re-opens the mandate for the traveller only, and H can never be approved again", () => {
+    const r = retireHash(approved());
+    expect(r).toMatchObject({ status: "pending_approval", paymentHash: null, retiredHashes: [H] });
+    expect(checkSpend(r, req())).toEqual({ ok: false, reason: "not_approved" });
+    expect(() => approveMandate(r, { actor: "traveller", paymentHash: H, at: T0 })).toThrow("make a new secret");
+    const again = approveMandate(r, { actor: "traveller", paymentHash: H2, at: T0 });
+    expect(again).toMatchObject({ status: "approved", paymentHash: H2, retiredHashes: [H] });
+    expect(checkSpend(again, req())).toEqual({ ok: false, reason: "wrong_hash" }); // the old H is refused
+    expect(checkSpend(again, req({ paymentHash: H2 }))).toEqual({ ok: true });
+  });
+  it("works from consuming (reconcile, once the wallet says the hold is dead), never from used, revoked or pending", () => {
+    const consuming = beginSpend(approved(), req());
+    expect(retireHash(consuming).status).toBe("pending_approval");
+    expect(() => retireHash(completeSpend(consuming))).toThrow(MandateError);
+    expect(() => retireHash(revokeMandate(approved()))).toThrow(MandateError);
+    expect(() => retireHash(retireHash(approved()))).toThrow(MandateError);
   });
 });

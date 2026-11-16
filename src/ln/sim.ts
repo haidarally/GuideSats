@@ -195,13 +195,15 @@ export class SimLedger {
   }
 
   cancel(receiver: string, hash: string): void {
+    this.tick();
     const h = this.holds.get(`${receiver}:${hash}`);
     if (!h) throw new Error("no hold invoice for this hash");
     if (h.state === "accepted") this.refund(h, "cancelled");
     else if (h.state === "open") {
       h.state = "cancelled";
       this.updateTx(receiver, hash, "failed");
-    } else throw new Error(`cannot cancel a hold in state ${h.state}`);
+    } else if (h.state === "settled") throw new Error("cannot cancel a hold in state settled");
+    // cancelled or expired: already dead, nothing to do (idempotent, like a wallet's cancel)
   }
 
   private refund(h: Hold, to: "cancelled" | "expired") {

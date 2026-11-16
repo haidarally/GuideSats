@@ -83,6 +83,9 @@ describe("NWC adapter (fake client)", () => {
     expect(await rejecting(Object.assign(new Error("x"), { code: "OTHER" })).payInvoice("ln")).toMatchObject({ status: "unknown" });
     expect(await rejecting(Object.assign(new Error("x"), { code: "INTERNAL" })).payInvoice("ln")).toMatchObject({ status: "unknown" });
     expect(await rejecting("not even an Error").payInvoice("ln")).toMatchObject({ status: "unknown" });
+    // What a cancelled hold looked like on the faucet wallets: the text is never read, only the code.
+    const canceled = Object.assign(new Error("Hold invoice canceled"), { name: "Nip47WalletError", code: "INTERNAL" });
+    expect(await rejecting(canceled).payInvoice("ln")).toEqual({ status: "unknown", error: "INTERNAL" });
     for (const code of ["PAYMENT_FAILED", "QUOTA_EXCEEDED", "RESTRICTED", "UNAUTHORIZED", "RATE_LIMITED", "NOT_IMPLEMENTED"]) {
       expect(await rejecting(Object.assign(new Error("x"), { code })).payInvoice("ln")).toEqual({ status: "failed", error: code });
     }
