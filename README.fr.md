@@ -6,7 +6,7 @@ Si une alerte cyclone GDACS pour Maurice arrive avant l'excursion, la facture es
 
 [English version: README.md](README.md) · Réalisé pour le Dakar Bitcoin Hack 2026 · Licence MIT
 
-> **Ce qui est réel, ce qui est simulé.** La démo tourne sur un Lightning **SIMULÉ** : un registre en mémoire avec factures « hold », marqué SIMULÉ sur chaque écran. Il écrit de vraies factures BOLT11, mais avec le préfixe regtest et sans signature : aucun portefeuille sur un vrai réseau ne pourrait les payer. L'adaptateur **Nostr Wallet Connect** pour de vrais portefeuilles est écrit et testé contre un faux client. Il **n'a pas encore été lancé** contre de vrais portefeuilles ; c'est le rôle de `npm run e2e:nwc`, qui demande deux portefeuilles de test (voir plus bas). Le décodage des factures, les contrôles, le mandat, l'agent et la règle cyclone sont le même code dans les deux cas, à une différence près. Avec de vrais portefeuilles, le bénéficiaire est la clé retrouvée à partir de la signature de la facture. Les factures simulées ne sont pas signées : leur bénéficiaire vient de l'étiquette `n`, acceptée uniquement sur regtest.
+> **Ce qui est réel, ce qui est simulé.** La démo tourne sur un Lightning **SIMULÉ** : un registre en mémoire avec factures « hold » et une chaîne simulée (un bloc toutes les 10 minutes), marqué SIMULÉ sur chaque écran. Il écrit de vraies factures BOLT11, mais avec le préfixe regtest et sans signature : aucun portefeuille sur un vrai réseau ne pourrait les payer. L'adaptateur **Nostr Wallet Connect** est testé contre un faux client, et son parcours « hold » a été lancé sur NWC contre les portefeuilles de test NWC Faucet d'Alby : des portefeuilles de test aux soldes fictifs, qui n'existent qu'à l'intérieur d'un seul Alby Hub ([ce qui a tourné](#lancer-sur-nwc-optionnel)). Le décodage des factures, les contrôles, le mandat, l'agent et la règle cyclone sont le même code dans les deux cas, à une différence près. Avec de vrais portefeuilles, le bénéficiaire est la clé retrouvée à partir de la signature de la facture. Les factures simulées ne sont pas signées : leur bénéficiaire vient de l'étiquette `n`, acceptée uniquement sur regtest.
 
 ## Lancer (une commande)
 
@@ -16,7 +16,7 @@ Il faut Node 22.13 ou plus récent. Ni compte, ni clé, ni Docker.
 npm install && npm run demo
 ```
 
-Ouvrez http://127.0.0.1:8787 sur cette machine (le serveur n'écoute que sur 127.0.0.1). La vue prévue est une fenêtre de la largeur d'un téléphone. Données de départ : un portefeuille voyageur de 120 000 sats et trois guides fictifs avec leurs excursions.
+Ouvrez http://127.0.0.1:8787 sur cette machine (le serveur n'écoute que sur 127.0.0.1). La vue prévue est une fenêtre de la largeur d'un téléphone. Données de départ : un portefeuille voyageur de 120 000 sats et trois guides fictifs avec leurs excursions. Les excursions commencent dans l'heure, dans la fenêtre de blocage : l'agent peut donc bloquer tout de suite.
 
 Le parcours principal prend environ 30 secondes :
 
@@ -30,7 +30,8 @@ Le parcours principal prend environ 30 secondes :
 6. Onglet **Agent** :
    - **Pousser l'agent à trop dépenser** utilise les outils de l'agent contre une réservation approuvée : une facture trois fois au-dessus du plafond, le bon montant vers un autre guide, `approve_mandate` et `raise_cap`. La console montre les quatre tentatives refusées.
    - **Déclencher une alerte cyclone GDACS** (un rejeu de la vraie fiche BELAL-24) rembourse automatiquement toute réservation bloquée.
-   - **Avancer de 13 h** montre une facture qui expire et rembourse.
+   - **Laisser expirer une facture « hold » impayée** : l'agent demande la facture sans la payer, et l'horloge dépasse son expiration. La carte de réservation propose alors **Approuver à nouveau (nouveau code)** : le téléphone crée un nouveau secret, et l'ancien code comme l'ancienne facture ne pourront plus jamais servir.
+   - **Avancer de 13 h** montre un « hold » qui dépasse son échéance (24 blocs) et rembourse.
 
 Vous pouvez aussi écrire une demande à l'agent, en français ou en anglais : *« je veux voir la cascade de Chamarel »*.
 
@@ -45,21 +46,25 @@ L'agent ne paie que la facture que l'appli a elle-même demandée au portefeuill
 ## Tester
 
 ```bash
-npm run check        # typecheck + 149 tests (unitaires, propriété, API) + les 4 scénarios de bout en bout ; hors ligne, sans clé
-npm run e2e:sim      # les quatre scénarios de démo, sous forme de rapport
+npm run check        # typecheck + 185 tests (unitaires, propriété, API) + les 6 scénarios de bout en bout ; hors ligne, sans clé
+npm run e2e:sim      # les six scénarios de démo, sous forme de rapport
 npm run test:e2e     # Playwright à 360 px (EN) et 412 px (FR) ; une fois avant : npx playwright install chromium
 ```
 
 Tests clés :
 
-- **Test de propriété** (fast-check). Il génère des suites aléatoires d'appels d'outils de l'agent : factures forgées, rejouées, croisées entre réservations ou illisibles, sauts d'horloge, alertes cyclone. Il vérifie ensuite **sur le registre** que le voyageur n'a jamais payé :
+- **Test de propriété** (fast-check). Il génère des suites aléatoires d'appels d'outils de l'agent : factures forgées, rejouées, croisées entre réservations ou illisibles, sauts d'horloge, blocs minés d'un coup, alertes cyclone, rapprochements, factures expirées suivies d'une nouvelle approbation du voyageur. Il vérifie ensuite **sur le registre** que le voyageur n'a jamais payé :
   - au-dessus d'un plafond ;
   - un bénéficiaire hors mandat ;
   - deux fois sur un même mandat ;
+  - une empreinte que le voyageur n'a pas approuvée ;
   - une réservation non approuvée.
 - **Vecteur de test de la spécification BOLT11.** Le bénéficiaire est retrouvé à partir de la signature avec `@noble/curves`.
 - **Règle cyclone sur des données GDACS enregistrées.** BELAL-24 (orange, Maurice) annule l'excursion ; FREDDY-23, GARANCE-25, HONDE-25, GAMANE-24 et FILIPO-24 ne l'annulent pas.
 - **Instantané (snapshot) des journaux.** Aucun préimage, chaîne NWC, nom, e-mail ou téléphone n'y survit.
+- **Rapprochement.** Un paiement à l'issue inconnue est tranché d'après le portefeuille du guide, une seule fois, même quand le paiement, la surveillance, la règle cyclone, le voyageur et le guide agissent en même temps.
+- **Rejeu.** Après une facture expirée, l'ancienne empreinte, l'ancienne facture et l'ancien secret sont refusés.
+- **Limite du « hold ».** Échéances en hauteur de bloc ou en heure Unix, marge de 6 blocs, « hold » annulé tout de suite quand la limite du portefeuille est trop courte.
 
 ## Le problème, l'utilisateur, la portée
 
@@ -72,7 +77,7 @@ De plus en plus de voyageurs préparent leur voyage avec des agents IA. Aujourd'
 Maurice a accueilli environ 1,38 million de touristes en 2024 (chiffres de Statistics Mauritius repris par la presse). La saison cyclonique du sud-ouest de l'océan Indien va de mi-novembre à avril, et jusqu'à mi-mai pour Maurice.
 
 **Ce qui change :**
-- Le guide reçoit un engagement avant le jour J, en sats, sur son propre portefeuille, sans frais de carte ni plateforme qui garde l'argent.
+- Le guide reçoit un engagement : un mandat approuvé dès la réservation, puis les sats bloqués dans un « hold » dans l'heure qui précède l'excursion, en sats, sur son propre portefeuille, sans frais de carte ni plateforme qui garde l'argent.
 - Le voyageur ne peut pas perdre son argent à cause d'un guide absent ou d'un cyclone.
 - L'agent ne peut jamais dépenser plus que ce qui a été approuvé.
 
@@ -92,6 +97,8 @@ Maurice a accueilli environ 1,38 million de touristes en 2024 (chiffres de Stati
   - le guide encaisse avec P au rendez-vous ;
   - une alerte cyclone annule ;
   - un délai expiré rembourse.
+- **Limite du « hold »** (`src/domain/holdLimit.ts`) : le portefeuille du guide annule de lui-même un « hold » accepté à son échéance (`settle_deadline`). Chaque « hold » accepté est comparé à cette échéance ; s'il ne peut pas durer jusqu'au rendez-vous, il est annulé tout de suite.
+- **Rapprochement** (`src/app/reconcile.ts`) : un paiement sans réponse claire est tranché d'après le portefeuille du guide (`lookup_invoice`), jamais d'après le texte d'une erreur.
 - **Agent** : un planificateur à règles, donc sans clé de LLM. Un planificateur LLM utiliserait les mêmes outils, sans rien de plus.
 
 ```mermaid
@@ -108,10 +115,10 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 
 ## Sécurité dès la conception (en bref)
 
-- **Modèle de menaces.** 15 menaces, chacune reliée à sa parade et au test qui la couvre ([SECURITY.md](SECURITY.md)).
+- **Modèle de menaces.** 18 menaces, chacune reliée à sa parade et au test qui la couvre ([SECURITY.md](SECURITY.md)).
 - **Moindre privilège.**
   - La connexion NWC du voyageur n'a besoin que de `pay_invoice` (plus `get_budget` et `get_balance`).
-  - Celle du guide n'a besoin que des méthodes « hold » et de `lookup_invoice`.
+  - Celle du guide n'a besoin que des méthodes « hold », de `lookup_invoice` et de `get_info`.
 - **Chaînes de connexion NWC.** Elles ne sont lues que dans des variables d'environnement. `.env` est ignoré par git et jamais journalisé.
 - **Le secret P.** Il est créé et gardé sur le téléphone du voyageur. L'agent ne voit jamais P ni aucun secret de portefeuille.
 - **Journaux et piste d'audit.** Ils passent par un filtre de caviardage, vérifié par un test d'instantané. Aucune donnée personnelle n'est collectée.
@@ -123,7 +130,7 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 
 ## Faible débit, téléphones milieu de gamme
 
-- Une PWA Preact de 41 Ko minifiés (environ 16 Ko gzip), sans police web.
+- Une PWA Preact de 43 Ko minifiés (environ 16 Ko gzip), sans police web.
 - Conçue d'abord pour 360 px, avec des zones tactiles de 44 px.
 - Mises à jour en direct par Server-Sent Events.
 - Interface en français et en anglais.
@@ -131,14 +138,17 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 ## Contraintes (honnêtes)
 
 - **Les factures « hold » sont récentes.** NWC-03 est un brouillon et peu de portefeuilles le prennent en charge. Le plan B (paiement après l'excursion, NIP-47 de base) est intégré : rien ne bouge avant l'excursion, et en cas de cyclone rien n'est payé.
-- **La durée d'un « hold » est limitée.** L'agent bloque donc les sats peu avant l'excursion : à partir de 10 h avant (limite supposée de 12 h moins 2 h de marge pour le rendez-vous), durée à mesurer lors du premier vrai essai.
+- **Un « hold » dure peu.** Le portefeuille du guide annule de lui-même un « hold » accepté à son échéance (`settle_deadline`). Sur les portefeuilles de test NWC Faucet d'Alby, cette échéance est une hauteur de bloc, 24 blocs plus loin, soit environ 4 h (mesuré le 16 nov. 2026). À la réservation, seul le mandat approuvé est enregistré, et l'agent ne peut bloquer les sats qu'à partir d'**1 h avant l'excursion** : (24 blocs − 6 de marge) × 10 minutes, moins 2 h pour un rendez-vous en retard. Chaque « hold » accepté est comparé à l'échéance que donne son portefeuille : s'il ne peut pas durer jusqu'à 2 h après le début avec 6 blocs d'avance, il est annulé tout de suite et le voyageur remboursé. Les blocs arrivent au hasard : s'ils viennent bien plus vite que la moyenne, un portefeuille peut encore annuler avant un rendez-vous très en retard, et le voyageur est alors remboursé.
+- **Une facture « hold » expirée demande à nouveau le voyageur.** Elle est liée à l'empreinte H du voyageur. Si elle expire avant que l'agent la paie, le voyageur approuve à nouveau et le téléphone crée un nouveau secret ; l'ancien n'est plus jamais accepté.
 - **Les budgets côté portefeuille (NWC-13) sont optionnels.** Sans budget, le mandat de l'appli reste le seul plafond.
-- **Des portefeuilles de test sur un même nœud** signent avec la même clé, ce qui affaiblit le contrôle du bénéficiaire entre eux.
+- **Les deux portefeuilles Faucet partagent une clé de nœud.** Ce sont des sous-portefeuilles d'un même Alby Hub : le contrôle du bénéficiaire (la clé retrouvée à partir de la signature doit être celle du guide) ne peut pas les distinguer, et l'essai Faucet ne l'exerce donc pas. Il est couvert par des tests unitaires et de propriété avec des clés distinctes. De vrais guides sur leurs propres nœuds ont des clés distinctes.
+- **En plan B, un paiement à l'issue inconnue reste réservé** jusqu'à ce que le portefeuille du guide indique la facture payée : un paiement ordinaire ne s'annule pas.
 - **GDACS liste les pays touchés par événement.** Un cyclone qui passe près de Maurice sans y être listé ne déclenche pas la règle.
 
 ## Indicateurs à suivre
 
-- Les réservations bloquées par semaine, et parmi elles les parts encaissées, remboursées pour cyclone et remboursées après expiration.
+- Les réservations bloquées par semaine, et parmi elles les parts encaissées, remboursées pour cyclone, remboursées après expiration, et remboursées tout de suite parce que la limite du « hold » était trop courte.
+- Les factures « hold » expirées impayées (chacune demande une nouvelle approbation).
 - Le délai entre l'approbation et le blocage.
 - Le délai entre le scan du code et l'encaissement.
 - Les refus classés par motif.
@@ -146,10 +156,25 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 
 ## Prochaine étape
 
-1. Premier vrai essai NWC sur deux portefeuilles de test.
+1. Un essai où le voyageur et le guide sont sur deux nœuds distincts, pour exercer aussi hors des tests le contrôle de la clé du bénéficiaire.
 2. Des budgets imposés par le portefeuille.
 3. Les alertes de la Météo mauricienne (MMS) comme seconde source.
 4. Une interface en kreol morisien.
+
+## Lancer sur NWC (optionnel)
+
+```bash
+cp .env.example .env    # puis remplir NWC_TRAVELLER_URL, NWC_GUIDE_URL, NWC_NETWORK pour deux portefeuilles de TEST
+npm run e2e:nwc         # refuse de démarrer sans ces valeurs ; deux étapes de 10 sats
+```
+
+Il a été lancé sur NWC contre les portefeuilles de test NWC Faucet d'Alby le 16 nov. 2026. Leurs soldes sont des sats fictifs qui n'existent qu'à l'intérieur d'un seul Alby Hub ; le réseau annoncé est `mainnet`, donc les factures commencent par `lnbc`. Résultats :
+
+- Le `get_info` du guide liste les méthodes « hold » (`make_hold_invoice`, `settle_hold_invoice`, `cancel_hold_invoice`) et `lookup_invoice`. Le `get_budget` du voyageur n'a renvoyé aucun budget.
+- **Encaissement :** un « hold » de 10 sats accepté, puis encaissé avec P. Le solde du voyageur a bougé de −10 sats.
+- **Annulation :** un « hold » de 10 sats accepté, puis annulé, et le voyageur remboursé (écart de solde 0). L'appel `pay_invoice` du voyageur a échoué (code NIP-47 `INTERNAL`) au lieu de répondre : l'issue se lit donc sur le portefeuille du guide avec `lookup_invoice`. C'est ce que fait l'étape de rapprochement.
+- **Limite du « hold » :** `lookup_invoice` a donné `settle_deadline` 976121 alors que `get_info` donnait `block_height` 976097 : une hauteur de bloc, 24 blocs plus loin, soit environ 4 h. La fenêtre de blocage en découle.
+- Les deux portefeuilles annoncent la même clé de nœud (voir Contraintes).
 
 ## Crédits
 

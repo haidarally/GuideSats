@@ -1,6 +1,6 @@
 # 3-minute demo video: script
 
-The event asks for "problem → solution → impact → next steps". Record at phone width (412 px), screen only, with captions. If the real NWC run has passed, show its terminal output in part 3; otherwise the video must say "SIMULATED" whenever the simulator is on screen.
+The event asks for "problem → solution → impact → next steps". Record at phone width (412 px), screen only, with captions. The video must say "SIMULATED" whenever the simulator is on screen. Part 3 may show the `npm run e2e:nwc` output; if it does, say on screen that it ran over NWC against Alby's NWC Faucet test wallets (dummy balances inside one Alby Hub).
 
 | Time | Screen | Voice-over / caption |
 |---|---|---|
