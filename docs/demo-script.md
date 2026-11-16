@@ -1,6 +1,6 @@
 # 3-minute demo video: script
 
-The event asks for "problem → solution → impact → next steps". The app footage is two clips that `npm run record:nwc` records at phone size (412 × 916 at 2x), over NWC against Alby's NWC Faucet test wallets: dummy balances inside one Alby Hub. Every frame shows the banner "NWC Faucet test wallets: dummy balances, no real sats". Say so in a caption too. If any simulator footage is used instead, it shows SIMULATED, and the video must say so.
+The event asks for "problem → solution → impact → next steps". The app footage is two clips that `npm run record:nwc` records at phone size (412 × 916 at 2x), over NWC against Alby's NWC Faucet test wallets: dummy balances inside one Alby Hub. Once the app has loaded, every frame checked shows the banner "NWC Faucet test wallets: dummy balances, no real sats". Say so in a caption too. If any simulator footage is used instead, it shows SIMULATED, and the video must say so.
 
 - **Clip 1, flow (a), about 50 s:** book, the mandate, approve, the agent locks 42 sats, the meeting code, the guide settles and is paid.
 - **Clip 2, flow (b), about 41 s:** a second booking, the overspend push refused, the agent locks 21 sats, the synthetic cyclone replay, the refund.

@@ -122,7 +122,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 - **An expired hold invoice needs the traveller again.** A hold invoice is bound to the traveller's hash H. If it expires before the agent pays it, the traveller approves again and the phone makes a new secret; the old one is never accepted again.
 - **Wallet budgets (NWC-13) are optional.** When a wallet offers no budget, the app's mandate is the only cap.
 - **The two faucet wallets share one node key.** They are sub-wallets of one Alby Hub, so the payee check (the key recovered from the invoice signature must be the guide's) cannot tell them apart. Over NWC it refused a forged invoice signed by a throwaway key, but it was never asked to tell two real nodes apart. It is covered by unit and property tests with distinct keys. Real guides on their own nodes have distinct keys.
-- **The faucet hub sometimes answers late.** It is one shared public hub. In the first video takes, two wallet calls got no reply within the SDK's timeout: once a settle, once the traveller's reads just after a payment. No sats stayed locked. After the settle that got no reply, the server cancelled the open hold when it stopped, and the traveller's balance was back; the late reads came before anything was booked. `e2e:nwc-app` waits for the reconcile step rather than failing on one late reply.
+- **Wallet replies were sometimes missing.** In the first two video takes, two wallet calls got no reply within the SDK's timeout: once a settle, once the traveller's reads just after a payment. The cause is not established. Both came before the app cut its own wallet reads (budget and block height at most every 30 s, one state read per burst of events), and none came after; the faucet hub is also shared with other users. No sats stayed locked. After the settle that got no reply, the server cancelled the open hold when it stopped, and the traveller's balance was back; the missing reads came before anything was booked. `e2e:nwc-app` waits for the reconcile step rather than failing on one missing reply.
 - **In plan B, an unknown payment stays reserved** until the guide's wallet reports the invoice settled, because a plain payment cannot be cancelled.
 - **After settlement, a refund** is a new payment that the guide starts. That is out of scope for v1.
 - **GDACS lists affected countries per event**, so a near miss that GDACS does not list for Mauritius does not trigger the rule.
@@ -160,7 +160,7 @@ Each one refuses to start without those values, and `e2e:nwc-app` also refuses w
 
 - The traveller and the guide are the two wallets in `.env`. There is one guide, Kaya Treks, with two tours of 42 and 21 sats.
 - The clock is real, and the block height is the one the guide's wallet reports. The tours start about 30 minutes after the server starts, inside the 50 min lock window; restart the server for fresh tour times.
-- Every screen says which backend runs: "NWC Faucet test wallets: dummy balances, no real sats", with the network and the block height.
+- Every screen says which backend runs: "NWC Faucet test wallets: dummy balances, no real sats", with the network and the block height. That text is fixed: the app cannot tell test wallets from real ones, so `.env` must only ever hold test wallets.
 - The API refuses, and the PWA hides, every control that fakes time or the chain (skip ahead, let an invoice expire), and reset.
 - The cyclone alert stays as the SYNTHETIC REPLAY of BELAL-24, so a refund can be shown. **Push the agent to overspend** forges its invoices locally (signed by a throwaway key), and they are refused before any wallet call.
 - On Ctrl+C the server first cancels any hold it still has open at the guide's wallet.
@@ -188,7 +188,7 @@ Each one refuses to start without those values, and `e2e:nwc-app` also refuses w
   3. The agent locked, with 3 blocks to spare.
   4. The synthetic cyclone replay cancelled the hold: booking `refunded_cyclone`, traveller balance change 0. As in `e2e:nwc`, the traveller's `pay_invoice` for the cancelled hold failed instead of returning.
 
-The demo video was recorded with `npm run record:nwc` on the same wallets, with the same two flows in the PWA: 42 sats settled, 21 sats refunded. While a hold waited, the traveller's balance showed 10 sats more than the price as held; after the settle exactly the price had moved, and after the cancel nothing.
+The demo video was recorded with `npm run record:nwc` on the same wallets, with the same two flows in the PWA: 42 sats settled, 21 sats refunded. Earlier that day, three video takes and two debugging runs used tours of 210 and 120 sats (the ±210 rows in the video's history lists). In all, 924 dummy sats moved from the traveller to the guide across these runs (traveller 9 960 → 9 036). While a hold waited, the traveller's balance showed 10 sats more than the price as held; after the settle exactly the price had moved, and after the cancel nothing.
 
 `e2e:nwc` drives the wallets directly; `demo:nwc` and `e2e:nwc-app` run the booking service itself over NWC (mandate, reconcile step, hold-limit check, cyclone rule). The re-approval after an expired hold invoice has run only on the simulator: it needs the invoice's 10 minutes to pass.
 
