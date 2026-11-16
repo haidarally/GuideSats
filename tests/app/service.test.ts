@@ -121,7 +121,7 @@ describe("BookingService on the SIMULATED backend", () => {
     w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: w.clock() });
     await expect(w.svc.requestInvoice(booking.id)).rejects.toThrow("not_confirmed_by_traveller");
     expect(() => w.svc.confirmTourHappened(booking.id)).toThrow("tour_not_started");
-    w.tick(9 * HOUR); // the lagoon tour starts at +6 h and lasts 2 h
+    w.tick(9 * HOUR); // the lagoon tour starts at +30 min and lasts 2 h
     w.svc.confirmTourHappened(booking.id);
     const inv = await w.svc.requestInvoice(booking.id);
     const r = await w.svc.payWithinMandate(booking.id, inv);

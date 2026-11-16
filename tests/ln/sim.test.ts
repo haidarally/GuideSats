@@ -50,15 +50,37 @@ describe("SIMULATED backend", () => {
     await expect(g.settleHoldInvoice(P)).rejects.toThrow("cancelled");
   });
 
-  it("an accepted hold past its settle deadline refunds by itself", async () => {
-    const { be, ledger, advance } = setup({ holdMaxSecs: 3600 });
+  it("an accepted hold reports a block-height settle_deadline 24 blocks ahead and refunds by itself there", async () => {
+    const { be, ledger, advance } = setup();
     const g = be.receiver("guide");
     const { invoice } = await g.makeHoldInvoice({ amountSats: 21_000, paymentHash: H, description: "tour", expirySecs: 600 });
     const done = be.payer("traveller").payInvoice(invoice);
-    advance(3600_000);
+    const height = (await g.getInfo()).blockHeight!;
+    expect((await g.lookupInvoice(H)).settleDeadline).toBe(height + 24);
+    advance(23 * 600_000 + 599_000); // 23 blocks later: still held
+    expect((await g.getInfo()).blockHeight).toBe(height + 23);
+    expect((await g.lookupInvoice(H)).state).toBe("accepted");
+    advance(1000); // block 24
     expect((await g.lookupInvoice(H)).state).toBe("expired");
     expect(await done).toEqual({ status: "refunded" });
     expect(ledger.balance("traveller")).toBe(50_000);
+  });
+
+  it("blocks that come faster than average bring the deadline sooner; a unix-seconds deadline is also modelled", async () => {
+    const fast = setup();
+    const g = fast.be.receiver("guide");
+    const { invoice } = await g.makeHoldInvoice({ amountSats: 1000, paymentHash: H, description: "x", expirySecs: 600 });
+    void fast.be.payer("traveller").payInvoice(invoice);
+    fast.ledger.mine(24);
+    expect((await g.lookupInvoice(H)).state).toBe("expired");
+
+    const unix = setup({ deadlineKind: "unix", holdMaxSecs: 3600 });
+    const u = unix.be.receiver("guide");
+    const made = await u.makeHoldInvoice({ amountSats: 1000, paymentHash: H, description: "x", expirySecs: 600 });
+    void unix.be.payer("traveller").payInvoice(made.invoice);
+    expect((await u.lookupInvoice(H)).settleDeadline).toBe(1_763_236_800 + 3600);
+    unix.advance(3600_000);
+    expect((await u.lookupInvoice(H)).state).toBe("expired");
   });
 
   it("refuses: insufficient balance, wallet budget, garbage, wrong preimage, expired invoice", async () => {

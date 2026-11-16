@@ -1,6 +1,6 @@
 // Nostr Wallet Connect adapter (NIP-47 + the NWC-03 hold-invoice extension) on @getalby/sdk.
-// Written against the SDK's types and unit-tested with a fake client; it has NOT been
-// run against a real wallet yet (that is the opt-in `npm run e2e:nwc`).
+// Unit-tested with a fake client, and run by the opt-in `npm run e2e:nwc` against Alby's
+// NWC Faucet test wallets (hold methods present, one hold settled, one cancelled and refunded).
 //
 // Least privilege: the traveller's connection should allow only pay_invoice (+ get_budget,
 // get_balance); the guide's only make/settle/cancel_hold_invoice + lookup_invoice.
@@ -21,7 +21,7 @@ import {
 
 /** The subset of @getalby/sdk's NWCClient this adapter uses (amounts in msat). */
 export interface NwcClientLike {
-  getInfo(): Promise<{ pubkey: string; network: string; methods: string[] }>;
+  getInfo(): Promise<{ pubkey: string; network: string; methods: string[]; block_height?: number }>;
   getBudget(): Promise<{ used_budget: number; total_budget: number; renewal_period: string } | Record<string, never>>;
   getBalance(): Promise<{ balance: number }>;
   payInvoice(req: { invoice: string }): Promise<{ preimage: string; fees_paid: number }>;
@@ -43,7 +43,7 @@ export interface NwcTx {
   amount: number; // msat
   created_at: number; // unix seconds
   expires_at: number; // unix seconds
-  settle_deadline?: number; // block height or unix time, wallet-specific (measure on the first real run)
+  settle_deadline?: number; // a block height on the faucet wallets (24 blocks ahead); unix seconds if >= 500 000 000
 }
 
 const NETWORKS: Record<string, Network> = { mainnet: "mainnet", bitcoin: "mainnet", testnet: "testnet", signet: "signet", regtest: "regtest" };
@@ -113,7 +113,7 @@ export class NwcBackend implements LightningBackend {
     const i = await this.client(id).getInfo();
     const net = parseNetwork(i.network);
     if (net !== this.network) throw new Error(`wallet "${id}" is on ${net}, expected ${this.network}`);
-    return { pubkey: i.pubkey, methods: [...i.methods], network: net };
+    return { pubkey: i.pubkey, methods: [...i.methods], network: net, blockHeight: typeof i.block_height === "number" ? i.block_height : undefined };
   }
 
   payer(id: string): PayerWallet {

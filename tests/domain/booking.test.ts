@@ -16,7 +16,7 @@ const base: Booking = {
   history: [],
 };
 
-const ALL_EVENTS: BookingEvent[] = ["APPROVE_MANDATE", "LOCK", "SETTLE", "CYCLONE_CANCEL", "HOLD_EXPIRED", "PAY_ON_COMPLETION", "TRAVELLER_CANCEL", "HASH_RETIRED"];
+const ALL_EVENTS: BookingEvent[] = ["APPROVE_MANDATE", "LOCK", "SETTLE", "CYCLONE_CANCEL", "HOLD_EXPIRED", "PAY_ON_COMPLETION", "TRAVELLER_CANCEL", "HASH_RETIRED", "HOLD_TOO_SHORT"];
 const ALL_STATES = Object.keys(TRANSITIONS) as BookingState[];
 
 describe("booking state machine", () => {
@@ -32,9 +32,10 @@ describe("booking state machine", () => {
     expect(applyEvent(applyEvent(m, "LOCK", 2), "CYCLONE_CANCEL", 3).state).toBe("refunded_cyclone");
     expect(applyEvent(m, "CYCLONE_CANCEL", 2).state).toBe("skipped_cyclone");
   });
-  it("hold expiry refunds", () => {
+  it("hold expiry refunds; a hold the wallet would cancel before the meeting is refunded at once", () => {
     const l = applyEvent(applyEvent(base, "APPROVE_MANDATE", 1), "LOCK", 2);
     expect(applyEvent(l, "HOLD_EXPIRED", 3).state).toBe("refunded_expired");
+    expect(applyEvent(l, "HOLD_TOO_SHORT", 3).state).toBe("refunded_hold_limit");
   });
   it("plan B (on_completion) pays only after the mandate, and cannot LOCK", () => {
     const m = applyEvent({ ...base, mode: "on_completion" }, "APPROVE_MANDATE", 1);
@@ -61,7 +62,7 @@ describe("booking state machine", () => {
     expect(nextState("proposed", "SETTLE")).toBeNull();
   });
   it("terminal states accept no event", () => {
-    expect([...TERMINAL_STATES].sort()).toEqual(["cancelled", "paid", "refunded_cyclone", "refunded_expired", "settled", "skipped_cyclone"]);
+    expect([...TERMINAL_STATES].sort()).toEqual(["cancelled", "paid", "refunded_cyclone", "refunded_expired", "refunded_hold_limit", "settled", "skipped_cyclone"]);
     for (const s of TERMINAL_STATES) {
       expect(isTerminal(s)).toBe(true);
       for (const e of ALL_EVENTS) expect(nextState(s, e)).toBeNull();
@@ -79,6 +80,6 @@ describe("booking state machine", () => {
           expect(applyEvent(b, e, 0).state).toBe(to);
         }
       }
-    expect(legal).toBe(14);
+    expect(legal).toBe(15);
   });
 });

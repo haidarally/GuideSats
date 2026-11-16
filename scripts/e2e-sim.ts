@@ -82,7 +82,7 @@ out("GuideSats end-to-end on the SIMULATED Lightning backend (regtest, in-proces
   const { booking } = w.svc.proposeBooking("tour_lagoon", "on_completion");
   w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: now });
   const early = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
-  now += 9 * 3_600_000; // the 2 h lagoon tour started 6 h after booking
+  now += 9 * 3_600_000; // the 2 h lagoon tour started 30 min after booking
   w.svc.confirmTourHappened(booking.id);
   const paid = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
   expect(`agent waits before confirmation (${early.outcome})`, early.outcome === "waiting_for_traveller_to_confirm_the_tour");
@@ -123,6 +123,19 @@ out("GuideSats end-to-end on the SIMULATED Lightning backend (regtest, in-proces
   expect(`agent locked with the new hash (${locked.outcome})`, locked.outcome === "locked");
   expect(`the old secret cannot settle (${oldSecret})`, oldSecret === "preimage_mismatch");
   expect(`guide received ${w.ledger.balance("guide_lemorne")} sats, once`, w.ledger.balance("guide_lemorne") === 21_000 && w.ledger.balance("traveller") === 99_000);
+}
+
+{
+  out("\n6. The guide's wallet allows a shorter hold than the tour needs: the hold is cancelled at once, the traveller refunded");
+  // The simulated guide wallets report a block-height settle_deadline only 12 blocks ahead (the faucet wallets: 24).
+  const w = await buildSimWorld({ hold: { holdLimitBlocks: 12 } });
+  const { booking } = w.svc.proposeBooking("tour_chamarel");
+  w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: secret().h, at: w.clock() });
+  const r = await runAgent(agentFacade(w.svc), { kind: "lock", bookingId: booking.id });
+  const why = w.svc.audit().find((a) => a.event === "hold_limit_too_short")?.fields as { deadlineKind?: string; spareBlocks?: number } | undefined;
+  expect(`agent's lock refused after the wallet accepted it (${r.outcome})`, r.outcome === "refused:hold_limit_too_short");
+  expect(`booking ${w.svc.booking(booking.id).state} (${why?.deadlineKind === "height" ? "block-height" : "unix-time"} deadline, ${-(why?.spareBlocks ?? 0)} blocks short)`, w.svc.booking(booking.id).state === "refunded_hold_limit");
+  expect(`traveller back to ${w.ledger.balance("traveller")} sats, no hold left`, w.ledger.balance("traveller") === 120_000 && w.ledger.allHolds().every((h) => h.state !== "accepted"));
 }
 
 out(failed === 0 ? "\nAll scenarios passed (SIMULATED)." : `\n${failed} check(s) failed.`);

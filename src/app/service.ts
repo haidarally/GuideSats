@@ -35,8 +35,10 @@ export interface Guide {
 
 export interface ServiceConfig {
   travellerWalletId: string;
-  lockLeadHours: number; // the agent may lock funds from this many hours before the tour
+  lockLeadHours: number; // the agent may lock funds from this many hours before the tour (domain/holdLimit.ts)
   invoiceExpirySecs: number;
+  meetingBufferMs?: number; // the guide may settle until the tour start + this (default 2 h)
+  holdMarginBlocks?: number; // spare blocks required before the wallet's settle deadline (default 6)
   acceptTimeoutMs?: number;
   pollMs?: number;
 }
@@ -176,7 +178,8 @@ export class BookingService {
       capSats: t.priceSats,
       payeePubkey: g.payeePubkey,
       // Hold mode: never earlier than lockLeadHours before the tour, so an accepted hold does not time out
-      // (settle_deadline) before the meeting. (Review fix: this was min(now, ...), which let the agent lock at once.)
+      // (settle_deadline) before the meeting. Each accepted hold is also checked against the deadline its
+      // wallet reports (app/reconcile.ts, checkHoldFit).
       notBefore: mode === "hold" ? t.startAt - this.cfg.lockLeadHours * 3_600_000 : t.startAt,
       notAfter: mode === "hold" ? t.startAt : tourEnd + 48 * 3_600_000,
       requireHash: mode === "hold",
@@ -365,6 +368,8 @@ export class BookingService {
       guideWalletOf: (b) => b.guideId,
       acceptTimeoutMs: this.cfg.acceptTimeoutMs,
       pollMs: this.cfg.pollMs,
+      meetingBufferMs: this.cfg.meetingBufferMs,
+      holdMarginBlocks: this.cfg.holdMarginBlocks,
       onFinal: (id: string, o: PayOutcome) => {
         this.log.info("payment_final", { bookingId: id, status: o.status });
         this.emit({ type: "wallet" });

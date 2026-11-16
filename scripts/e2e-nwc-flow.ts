@@ -1,7 +1,7 @@
 // The steps of `npm run e2e:nwc`, written against the Lightning interface so they also run offline
 // against the SIMULATED backend (tests/scripts/e2e-nwc-flow.test.ts). Never logs a preimage or a node key.
 //
-//   (0) gate: the guide's wallet lists the hold methods; record get_budget
+//   (0) gate: the guide's wallet lists the hold methods; record get_budget and the chain tip (block_height)
 //   (1) lock `amountSats` with a hold invoice, then settle it with P
 //   (2) lock `amountSats` again with a new P, then cancel it: the traveller is refunded
 // After each ending the outcome is read back from the guide's wallet (lookup_invoice) and resolved
@@ -9,6 +9,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { holdResolution } from "../src/app/reconcile";
+import { holdFits, lockLeadMs, MEETING_BUFFER_MS, parseSettleDeadline } from "../src/domain/holdLimit";
 import type { HoldState, PayerWallet, PayOutcome, ReceiverWallet } from "../src/ln/backend";
 import type { Network } from "../src/ln/bolt11";
 import { checkInvoice, type PayeeProof } from "../src/ln/invoiceCheck";
@@ -48,6 +49,7 @@ export async function runNwcFlow(d: NwcFlowDeps): Promise<Record<"settle" | "can
   assertHoldSupport(gInfo);
   d.log.info("gate_hold_methods_ok", { methods: gInfo.methods, network: gInfo.network });
   d.log.info("gate_budget", { budget: await d.payer.getBudget() });
+  d.log.info("gate_chain", { blockHeight: gInfo.blockHeight ?? null });
 
   const out = {} as Record<"settle" | "cancel", EndingReport>;
   let open: string | null = null; // the hash of a hold this run may still have to cancel
@@ -67,7 +69,24 @@ export async function runNwcFlow(d: NwcFlowDeps): Promise<Record<"settle" | "can
         await sleep(pollMs);
         const l = await g.lookupInvoice(h);
         state = l.state;
-        if (state === "accepted") d.log.info("hold_accepted", { ending, paymentHash: h, settleDeadline: l.settleDeadline });
+        if (state === "accepted") {
+          // The hold limit, as the app reads it: block height or unix seconds, and whether a lock made at the
+          // earliest moment of the window (1 h before a tour) could wait for a settle 2 h after the tour start.
+          const blockHeight = (await g.getInfo()).blockHeight;
+          const deadline = parseSettleDeadline(l.settleDeadline);
+          const t = now();
+          const fit = holdFits({ settleDeadline: l.settleDeadline, blockHeight, now: t, settleBy: t + lockLeadMs() + MEETING_BUFFER_MS });
+          d.log.info("hold_accepted", {
+            ending,
+            paymentHash: h,
+            settleDeadline: l.settleDeadline ?? null,
+            blockHeight: blockHeight ?? null,
+            deadlineKind: deadline?.kind ?? null,
+            blocksAhead: deadline?.kind === "height" && blockHeight ? deadline.height - blockHeight : null,
+            windowFits: fit.ok,
+            spareBlocks: "spareBlocks" in fit ? fit.spareBlocks : null,
+          });
+        }
       }
       if (state !== "accepted") throw new Error(`hold never accepted (state ${state})`);
 

@@ -2,7 +2,9 @@
 //
 //  proposed --APPROVE_MANDATE--> mandated --LOCK--> locked --SETTLE--> settled
 //      |                          ^  |                  |--CYCLONE_CANCEL--> refunded_cyclone
-//      |                          |  |                  '--HOLD_EXPIRED----> refunded_expired
+//      |                          |  |                  |--HOLD_EXPIRED----> refunded_expired
+//      |                          |  |                  '--HOLD_TOO_SHORT--> refunded_hold_limit (the wallet's settle
+//      |                          |  |                       deadline comes before the planned settle: cancelled at once)
 //      |          APPROVE_MANDATE |  |--HASH_RETIRED--> reapproval_needed  (hold invoice for H dead, nothing locked:
 //      |          (new secret)    '--------------------------'              the traveller approves again with a NEW secret)
 //      |                            |--CYCLONE_CANCEL--> skipped_cyclone   (nothing was locked)
@@ -17,6 +19,7 @@ export type BookingState =
   | "settled"
   | "refunded_cyclone"
   | "refunded_expired"
+  | "refunded_hold_limit"
   | "skipped_cyclone"
   | "paid"
   | "cancelled";
@@ -29,16 +32,18 @@ export type BookingEvent =
   | "HOLD_EXPIRED"
   | "PAY_ON_COMPLETION"
   | "TRAVELLER_CANCEL"
-  | "HASH_RETIRED";
+  | "HASH_RETIRED"
+  | "HOLD_TOO_SHORT";
 
 export const TRANSITIONS: Readonly<Record<BookingState, Readonly<Partial<Record<BookingEvent, BookingState>>>>> = {
   proposed: { APPROVE_MANDATE: "mandated", TRAVELLER_CANCEL: "cancelled", CYCLONE_CANCEL: "skipped_cyclone" },
   mandated: { LOCK: "locked", CYCLONE_CANCEL: "skipped_cyclone", PAY_ON_COMPLETION: "paid", TRAVELLER_CANCEL: "cancelled", HASH_RETIRED: "reapproval_needed" },
   reapproval_needed: { APPROVE_MANDATE: "mandated", TRAVELLER_CANCEL: "cancelled", CYCLONE_CANCEL: "skipped_cyclone" },
-  locked: { SETTLE: "settled", CYCLONE_CANCEL: "refunded_cyclone", HOLD_EXPIRED: "refunded_expired" },
+  locked: { SETTLE: "settled", CYCLONE_CANCEL: "refunded_cyclone", HOLD_EXPIRED: "refunded_expired", HOLD_TOO_SHORT: "refunded_hold_limit" },
   settled: {},
   refunded_cyclone: {},
   refunded_expired: {},
+  refunded_hold_limit: {},
   skipped_cyclone: {},
   paid: {},
   cancelled: {},
@@ -63,6 +68,7 @@ export interface Booking {
   paymentHash: string | null;
   invoice: string | null;
   confirmedAt?: number | null; // plan B: when the traveller confirmed the tour happened
+  holdCheckedAt?: number | null; // hold mode: when the accepted hold was found to outlive the planned settle
   history: { at: number; event: BookingEvent; from: BookingState; to: BookingState }[];
 }
 

@@ -23,6 +23,8 @@ export interface PaymentDeps {
   guideWalletOf: (b: Booking) => string;
   acceptTimeoutMs?: number;
   pollMs?: number;
+  meetingBufferMs?: number; // the guide may settle until tourStart + this (default 2 h)
+  holdMarginBlocks?: number; // spare blocks required before the wallet's settle deadline (default 6)
   onFinal?: (bookingId: string, outcome: PayOutcome) => void;
 }
 
@@ -56,6 +58,7 @@ function resultNow(d: PaymentDeps, bookingId: string, amountSats: number): PayRe
   if (b.state === "locked" || b.state === "settled" || b.state === "paid") return { ok: true, state: b.state, amountSats };
   if (d.store.mandateForBooking(bookingId)?.status === "consuming") return { ok: false, reason: "payment_unknown_needs_reconcile" };
   if (b.state === "reapproval_needed") return { ok: false, reason: "hold_cancelled_reapproval_needed" };
+  if (b.state === "refunded_hold_limit") return { ok: false, reason: "hold_limit_too_short" };
   return { ok: false, reason: `booking_changed_during_payment:${b.state}` };
 }
 

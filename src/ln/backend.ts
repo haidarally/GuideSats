@@ -11,6 +11,7 @@ export interface WalletInfo {
   pubkey: string; // Lightning node key that signs this wallet's invoices
   methods: string[];
   network: Network;
+  blockHeight?: number; // the wallet's chain tip (NWC get_info block_height), when it reports one
 }
 
 export interface Budget {
@@ -68,6 +69,7 @@ export interface ReceiverWallet {
   makeInvoice(req: { amountSats: number; description: string; expirySecs: number }): Promise<MadeInvoice>;
   settleHoldInvoice(preimage: string): Promise<void>;
   cancelHoldInvoice(paymentHash: string): Promise<void>;
+  /** settleDeadline: as the wallet reports it, a block height or unix seconds (see domain/holdLimit.ts). */
   lookupInvoice(paymentHash: string): Promise<{ state: HoldState; amountSats: number; settleDeadline?: number }>;
   listTransactions(): Promise<TxRecord[]>;
 }

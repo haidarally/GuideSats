@@ -11,20 +11,22 @@
 //                          from the invoice's own expiry time rather than from the wallet.
 //     open, or the lookup fails -> left as it is (fail closed) and retried on the next tick
 //   mandate "consuming", plan B: settled -> paid. Anything else stays reserved: a plain payment cannot be cancelled.
-//   booking "locked": cancelled/expired -> refunded_expired; settled -> settled.
+//   booking "locked": cancelled/expired -> refunded_expired; settled -> settled; accepted but not yet checked
+//     against the wallet's settle deadline -> the hold-limit check below (cancelled at once if it cannot last).
 //   booking "mandated" (hold mode) whose hold invoice expired before the agent paid it: H is retired and the
 //   old invoice cancelled at the guide's wallet; the traveller approves again with a NEW secret.
 //
 // Every change is a compare-and-set (mandate status, booking state). The cyclone rule, the traveller,
 // the guide, the pay path and the tick may race; each outcome is applied once, by whoever comes first.
 import { applyEvent, nextState, type Booking, type BookingEvent } from "../domain/booking";
+import { holdFits, MEETING_BUFFER_MS } from "../domain/holdLimit";
 import { completeSpend, retireHash, revokeMandate } from "../domain/mandate";
 import type { HoldState } from "../ln/backend";
 import { invoiceExpiresAt, MIN_SECONDS_LEFT } from "../ln/invoiceCheck";
 import type { Store } from "../store/db";
 import type { PaymentDeps } from "./payments";
 
-export type ReconcileDeps = Pick<PaymentDeps, "store" | "backend" | "clock" | "log" | "guideWalletOf">;
+export type ReconcileDeps = Pick<PaymentDeps, "store" | "backend" | "clock" | "log" | "guideWalletOf" | "meetingBufferMs" | "holdMarginBlocks">;
 
 /** What a hold's state at the guide's wallet means for the payment. Shared with `npm run e2e:nwc`. */
 export type Resolution = "locked" | "settled" | "released" | "pending";
@@ -36,7 +38,17 @@ export function holdResolution(state: HoldState): Resolution {
   return "pending";
 }
 
-export type ReconcileOutcome = "locked" | "settled" | "paid" | "reapproval_needed" | "revoked" | "refunded_expired" | "lock_aborted" | "pending" | "unchanged";
+export type ReconcileOutcome =
+  | "locked"
+  | "settled"
+  | "paid"
+  | "reapproval_needed"
+  | "revoked"
+  | "refunded_expired"
+  | "refunded_hold_limit"
+  | "lock_aborted"
+  | "pending"
+  | "unchanged";
 
 /**
  * Applies `event` to the booking as it is NOW in the store, with an atomic compare-and-set on its state.
@@ -101,6 +113,7 @@ export async function reconcileBooking(d: ReconcileDeps, bookingId: string): Pro
       d.store.audit(at, "settled_at_wallet", { bookingId, amountSats: b.priceSats, paymentHash: b.paymentHash });
       return "settled";
     }
+    if (state === "accepted" && !b.holdCheckedAt) return checkHoldFit(d, bookingId, b.paymentHash);
   }
   return "unchanged";
 }
@@ -122,7 +135,8 @@ export async function resolveAccepted(d: ReconcileDeps, bookingId: string, hash:
   if (transitionBooking(d.store, bookingId, "LOCK", at, invoice ? { invoice } : {})) {
     d.store.audit(at, "locked", { bookingId, amountSats: cur.b.priceSats, paymentHash: hash });
     d.log.info("locked", { bookingId, amountSats: cur.b.priceSats, paymentHash: hash });
-    return "locked";
+    const fit = await checkHoldFit(d, bookingId, hash);
+    return fit === "refunded_hold_limit" ? fit : "locked";
   }
   // The booking moved on while the lock was in flight (the service refuses a traveller cancel during a
   // payment, and the cyclone rule cancels the hold itself; this is defence in depth). Give the sats back now.
@@ -208,4 +222,51 @@ export async function retireDeadInvoice(d: ReconcileDeps, bookingId: string): Pr
   }
   d.store.audit(at, "hold_invoice_expired_reapproval_needed", { bookingId, paymentHash: hash, cancelled });
   return "reapproval_needed";
+}
+
+/**
+ * After a hold is accepted: can it wait until the planned settle moment (tour start + meeting buffer) with
+ * the margin to spare before the deadline the guide's wallet reports? If not, the wallet would cancel it by
+ * itself before the guide can settle, so it is cancelled now (the traveller is refunded) and the booking says
+ * why. Fails closed: no deadline, or a block-height deadline without the wallet's block height, is "no".
+ * If the wallet cannot be asked, the booking stays locked and unchecked, and the next tick tries again.
+ */
+export async function checkHoldFit(d: ReconcileDeps, bookingId: string, hash: string): Promise<ReconcileOutcome> {
+  const b0 = d.store.getBooking(bookingId);
+  if (!b0 || b0.state !== "locked" || b0.paymentHash !== hash || b0.holdCheckedAt) return "unchanged";
+  const receiver = d.backend.receiver(d.guideWalletOf(b0));
+  let look: Awaited<ReturnType<typeof receiver.lookupInvoice>>;
+  let blockHeight: number | undefined;
+  try {
+    look = await receiver.lookupInvoice(hash);
+    blockHeight = (await receiver.getInfo()).blockHeight;
+  } catch {
+    d.store.audit(d.clock(), "hold_limit_unverified", { bookingId });
+    return "pending";
+  }
+  if (look.state !== "accepted") return "unchanged"; // settled or cancelled meanwhile: the locked branch records it
+  const at = d.clock();
+  const b = d.store.getBooking(bookingId);
+  if (!b || b.state !== "locked" || b.paymentHash !== hash || b.holdCheckedAt) return "unchanged";
+  const settleBy = b.tourStart + (d.meetingBufferMs ?? MEETING_BUFFER_MS);
+  const fit = holdFits({ settleDeadline: look.settleDeadline, blockHeight, now: at, settleBy, marginBlocks: d.holdMarginBlocks });
+  const facts = { bookingId, settleDeadline: look.settleDeadline, blockHeight, deadlineKind: fit.deadline?.kind };
+  if (fit.ok) {
+    d.store.casBooking({ ...b, holdCheckedAt: at }, "locked");
+    d.store.audit(at, "hold_limit_ok", { ...facts, spareBlocks: fit.spareBlocks });
+    return "unchanged";
+  }
+  d.store.audit(at, "hold_limit_too_short", { ...facts, reason: fit.reason, spareBlocks: "spareBlocks" in fit ? fit.spareBlocks : undefined });
+  d.log.warn("hold_limit_too_short", { ...facts, reason: fit.reason });
+  try {
+    await receiver.cancelHoldInvoice(hash);
+  } catch {
+    d.store.audit(d.clock(), "hold_limit_cancel_failed", { bookingId });
+    return "pending"; // still unchecked: the next tick tries again
+  }
+  if (transitionBooking(d.store, bookingId, "HOLD_TOO_SHORT", d.clock())) {
+    d.store.audit(d.clock(), "refunded_hold_limit", { bookingId, amountSats: b.priceSats });
+    return "refunded_hold_limit";
+  }
+  return "unchanged";
 }

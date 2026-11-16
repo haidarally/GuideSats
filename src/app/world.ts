@@ -2,7 +2,8 @@
 // Used by `npm run demo`, `npm run e2e:sim` and the tests.
 import { readFileSync } from "node:fs";
 import type { GdacsFeed } from "../domain/cyclone";
-import { SimBackend, SimLedger } from "../ln/sim";
+import { lockLeadMs } from "../domain/holdLimit";
+import { SimBackend, SimLedger, type SimOptions } from "../ln/sim";
 import { makeLogger, type Logger } from "../log/redact";
 import { Store } from "../store/db";
 import { BookingService, type Guide, type ServiceConfig, type Tour } from "./service";
@@ -17,16 +18,14 @@ export function loadSeed(): Seed {
   return JSON.parse(readFileSync(new URL("../../fixtures/seed.json", import.meta.url), "utf8")) as Seed;
 }
 
-/** The lock window must close this long before the hold limit, so a late meeting can still settle. */
-export const MEETING_BUFFER_HOURS = 2;
-
 export interface SimWorldOptions {
   clock?: () => number;
   seed?: Seed;
   feed?: () => GdacsFeed;
   log?: Logger;
   dbPath?: string;
-  holdMaxSecs?: number;
+  /** How the simulated guide wallets limit holds (default: a 24-block settle_deadline, as measured). */
+  hold?: Pick<SimOptions, "holdLimitBlocks" | "deadlineKind" | "holdMaxSecs">;
   config?: Partial<ServiceConfig>;
 }
 
@@ -37,11 +36,7 @@ export async function buildSimWorld(opts: SimWorldOptions = {}) {
   const seed = opts.seed ?? loadSeed();
   const balances: Record<string, number> = { [seed.traveller.id]: seed.traveller.walletSats };
   for (const g of seed.guides) balances[g.id] = g.walletSats;
-  // The hold limit (HTLC timeout / settle_deadline) is assumed to be 12 h until the first real run measures it.
-  // The lock window opens MEETING_BUFFER_HOURS inside it, so a hold locked at the earliest moment still
-  // settles when the guide and the traveller meet a little late.
-  const holdMaxSecs = opts.holdMaxSecs ?? 12 * 3600;
-  const ledger = new SimLedger({ clock, balances, holdMaxSecs });
+  const ledger = new SimLedger({ clock, balances, ...opts.hold });
   const backend = new SimBackend(ledger);
   const guides: Guide[] = [];
   for (const g of seed.guides) {
@@ -61,8 +56,10 @@ export async function buildSimWorld(opts: SimWorldOptions = {}) {
   const log = opts.log ?? makeLogger(() => {});
   const svc = new BookingService(store, backend, clock, opts.feed ?? (() => ({ type: "FeatureCollection", features: [] })), log, tours, guides, {
     travellerWalletId: seed.traveller.id,
-    lockLeadHours: Math.max(1, holdMaxSecs / 3600 - MEETING_BUFFER_HOURS),
-    invoiceExpirySecs: 3600,
+    // The app does not know a wallet's hold limit in advance: the window comes from the measured one
+    // (1 h before the tour), and each accepted hold is checked against the deadline its wallet reports.
+    lockLeadHours: lockLeadMs() / 3_600_000,
+    invoiceExpirySecs: 600,
     acceptTimeoutMs: 2000,
     pollMs: 20,
     ...opts.config,

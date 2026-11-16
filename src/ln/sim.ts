@@ -2,10 +2,14 @@
 // Deterministic (injected clock, no randomness), regtest-only invoices with a zero
 // signature, so nothing it produces can ever be paid on a real network.
 // No private keys exist here: "node ids" are labels derived by hashing a wallet id.
+// It has a chain tip too: one block every 10 minutes of the injected clock (plus any the tests
+// mine at once), and an accepted hold's settle_deadline is a block height, as measured on real
+// NWC wallets (see domain/holdLimit.ts). A unix-seconds deadline can be chosen for tests.
 import { decode } from "light-bolt11-decoder";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { encodeSimInvoice } from "./bolt11";
+import { BLOCK_MS, MEASURED_HOLD_LIMIT_BLOCKS } from "../domain/holdLimit";
 import type {
   Budget,
   HoldInvoiceRequest,
@@ -34,7 +38,7 @@ interface Hold {
   invoice: string;
   state: HoldState;
   invoiceExpiresAt: number;
-  settleDeadline: number | null;
+  settleDeadline: number | null; // as the wallet reports it: a block height, or unix seconds
   resolve: ((o: PayOutcome) => void) | null;
   plain: boolean; // a regular invoice (plan B): paid at once, no hold
   preimage: string | null; // known to the receiving wallet for plain invoices
@@ -44,12 +48,20 @@ export interface SimOptions {
   clock: () => number;
   balances: Record<string, number>; // walletId -> sats
   budgets?: Record<string, Budget>;
-  holdMaxSecs?: number; // how long an accepted hold may stay unsettled (assumed 12 h until measured)
+  holdLimitBlocks?: number; // blocks an accepted hold may wait (default: the 24 measured on the faucet wallets)
+  deadlineKind?: "height" | "unix"; // how settle_deadline is reported (default "height", as measured)
+  holdMaxSecs?: number; // deadlineKind "unix" only: seconds an accepted hold may wait (default 4 h)
+  startHeight?: number; // chain tip when the ledger starts (default 900 000)
 }
 
 export class SimLedger {
   readonly clock: () => number;
+  readonly holdLimitBlocks: number;
+  readonly deadlineKind: "height" | "unix";
   readonly holdMaxSecs: number;
+  private readonly t0: number;
+  private readonly startHeight: number;
+  private minedAtOnce = 0;
   private balances = new Map<string, number>();
   private budgets = new Map<string, Budget>();
   private holds = new Map<string, Hold>(); // key: `${receiver}:${paymentHash}`
@@ -57,9 +69,22 @@ export class SimLedger {
 
   constructor(opts: SimOptions) {
     this.clock = opts.clock;
-    this.holdMaxSecs = opts.holdMaxSecs ?? 12 * 3600;
+    this.holdLimitBlocks = opts.holdLimitBlocks ?? MEASURED_HOLD_LIMIT_BLOCKS;
+    this.deadlineKind = opts.deadlineKind ?? "height";
+    this.holdMaxSecs = opts.holdMaxSecs ?? 4 * 3600;
+    this.t0 = opts.clock();
+    this.startHeight = opts.startHeight ?? 900_000;
     for (const [id, sats] of Object.entries(opts.balances)) this.balances.set(id, sats);
     for (const [id, b] of Object.entries(opts.budgets ?? {})) this.budgets.set(id, { ...b });
+  }
+
+  /** The chain tip: one block per 10 minutes of the clock since the ledger started, plus mined ones. */
+  blockHeight(): number {
+    return this.startHeight + Math.floor(Math.max(0, this.clock() - this.t0) / BLOCK_MS) + this.minedAtOnce;
+  }
+  /** Tests: blocks that come faster than the 10-minute average. */
+  mine(blocks: number): void {
+    this.minedAtOnce += blocks;
   }
 
   balance(id: string): number {
@@ -174,7 +199,7 @@ export class SimLedger {
     if (b) b.usedSats += h.amountSats;
     h.payer = payer;
     h.state = "accepted";
-    h.settleDeadline = now + this.holdMaxSecs * 1000;
+    h.settleDeadline = this.deadlineKind === "height" ? this.blockHeight() + this.holdLimitBlocks : Math.floor(now / 1000) + this.holdMaxSecs;
     this.updateTx(h.receiver, hash, "held");
     this.record(payer, { at: now, direction: "out", amountSats: h.amountSats, paymentHash: hash, state: "held", description: `[${SIM_LABEL}] hold` });
     return new Promise((resolve) => (h.resolve = resolve));
@@ -218,14 +243,19 @@ export class SimLedger {
     h.resolve?.({ status: "refunded" });
   }
 
-  /** Expire unpaid invoices and time out accepted holds past their settle deadline. */
+  private pastDeadline(h: Hold): boolean {
+    if (h.settleDeadline === null) return false;
+    return this.deadlineKind === "height" ? this.blockHeight() >= h.settleDeadline : this.clock() >= h.settleDeadline * 1000;
+  }
+
+  /** Expire unpaid invoices, and cancel accepted holds that reached their settle deadline (the payer is refunded). */
   tick(): void {
     const now = this.clock();
     for (const h of this.holds.values()) {
       if (h.state === "open" && now >= h.invoiceExpiresAt) {
         h.state = "expired";
         this.updateTx(h.receiver, h.paymentHash, "failed");
-      } else if (h.state === "accepted" && h.settleDeadline !== null && now >= h.settleDeadline) this.refund(h, "expired");
+      } else if (h.state === "accepted" && this.pastDeadline(h)) this.refund(h, "expired");
     }
   }
 
@@ -247,7 +277,7 @@ export class SimBackend implements LightningBackend {
   constructor(readonly ledger: SimLedger) {}
 
   private info(id: string): WalletInfo {
-    return { pubkey: simNodeId(id), methods: SIM_METHODS, network: "regtest" };
+    return { pubkey: simNodeId(id), methods: SIM_METHODS, network: "regtest", blockHeight: this.ledger.blockHeight() };
   }
 
   payer(id: string): PayerWallet {

@@ -34,7 +34,7 @@ nav button.active { color: var(--brand); border-bottom-color: var(--brand); }
 .pill { display: inline-block; margin-top: 8px; padding: 2px 10px; border-radius: 999px; font-size: .8rem; background: var(--line); }
 .pill-mandated, .pill-locked, .pill-tx-held { background: #dceff3; color: var(--brand); }
 .pill-settled, .pill-tx-settled, .pill-paid { background: #dcf1e5; color: var(--good); }
-.pill-refunded_cyclone, .pill-refunded_expired, .pill-skipped_cyclone, .pill-reapproval_needed, .pill-tx-refunded { background: #fff1d6; color: var(--warn); }
+.pill-refunded_cyclone, .pill-refunded_expired, .pill-refunded_hold_limit, .pill-skipped_cyclone, .pill-reapproval_needed, .pill-tx-refunded { background: #fff1d6; color: var(--warn); }
 .pill-cancelled, .pill-tx-failed { background: #f4dcda; color: var(--bad); }
 .mandate { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: .9rem; }

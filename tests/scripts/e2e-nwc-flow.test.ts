@@ -40,7 +40,8 @@ describe("e2e:nwc flow (offline, SIMULATED wallets)", () => {
     });
     expect(r.settle).toEqual({ payOutcome: "settled", walletState: "settled", reconciled: "settled", travellerDeltaSats: -10 });
     expect(r.cancel).toEqual({ payOutcome: "unknown", walletState: "cancelled", reconciled: "released", travellerDeltaSats: 0 });
-    expect(lines.map((l) => JSON.parse(l).event)).toEqual(["gate_hold_methods_ok", "gate_budget", "hold_accepted", "e2e_settle_done", "hold_accepted", "e2e_cancel_done"]);
+    expect(lines.map((l) => JSON.parse(l).event)).toEqual(["gate_hold_methods_ok", "gate_budget", "gate_chain", "hold_accepted", "e2e_settle_done", "hold_accepted", "e2e_cancel_done"]);
+    expect(JSON.parse(lines[3]!)).toMatchObject({ deadlineKind: "height", blocksAhead: 24, windowFits: true, spareBlocks: 0 });
     const all = lines.join("\n");
     for (const s of secrets) expect(all).not.toContain(s);
     expect(all).not.toContain((await be.receiver("guide").getInfo()).pubkey);

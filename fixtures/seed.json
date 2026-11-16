@@ -1,5 +1,5 @@
 {
-  "_note": "Seed data for the local demo. Every person and business here is fictional.",
+  "_note": "Seed data for the local demo. Every person and business here is fictional. Tours start within the hour, inside the lock window, so the agent may lock at once.",
   "traveller": { "id": "traveller", "walletSats": 120000, "label": "Demo traveller" },
   "guides": [
     { "id": "guide_lemorne", "displayName": "Kaya Treks", "area": "Le Morne", "languages": ["EN", "FR", "Kreol"], "walletSats": 0 },
@@ -13,7 +13,7 @@
       "title": { "en": "Le Morne Brabant sunrise hike", "fr": "Randonnée au lever du soleil au Morne Brabant" },
       "meetingPoint": { "en": "Le Morne trailhead car park", "fr": "Parking du départ du sentier du Morne" },
       "priceSats": 21000,
-      "startInHours": 8,
+      "startInHours": 0.75,
       "durationHours": 4
     },
     {
@@ -22,7 +22,7 @@
       "title": { "en": "Chamarel waterfall and seven-coloured earth walk", "fr": "Cascade de Chamarel et Terre des Sept Couleurs" },
       "meetingPoint": { "en": "Chamarel village church", "fr": "Église du village de Chamarel" },
       "priceSats": 15000,
-      "startInHours": 10,
+      "startInHours": 0.9,
       "durationHours": 3
     },
     {
@@ -31,7 +31,7 @@
       "title": { "en": "Blue Bay lagoon glass-bottom boat", "fr": "Bateau à fond de verre dans le lagon de Blue Bay" },
       "meetingPoint": { "en": "Blue Bay public beach jetty", "fr": "Jetée de la plage publique de Blue Bay" },
       "priceSats": 12000,
-      "startInHours": 6,
+      "startInHours": 0.5,
       "durationHours": 2
     }
   ]
