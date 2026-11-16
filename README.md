@@ -162,6 +162,7 @@ It was run over NWC against Alby's NWC Faucet test wallets on 16 Nov 2026. Their
 - **Cancel:** a 10-sat hold was accepted, then cancelled, and the traveller was refunded (balance change 0). The traveller's `pay_invoice` call failed (NIP-47 code `INTERNAL`) instead of returning, so the outcome is read back from the guide's wallet with `lookup_invoice`. That is what the reconcile step does.
 - **Hold limit:** `lookup_invoice` gave `settle_deadline` 976121 while `get_info` gave `block_height` 976097: a block height 24 blocks ahead, about 4 h. The lock window above is derived from it.
 - Both wallets report the same node key (see Constraints).
+- A second run the same day, with the reconcile step in the script, reported the cancelled hold from `lookup_invoice` as `released` (wallet state cancelled, traveller balance change 0, while `pay_invoice` again failed with `INTERNAL`), and again a deadline 24 blocks ahead (976127 against 976103); a lock made at the earliest moment of the window fits it with 0 blocks to spare beyond the margin.
 
 ## Credits
 

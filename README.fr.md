@@ -175,6 +175,7 @@ Il a été lancé sur NWC contre les portefeuilles de test NWC Faucet d'Alby le 
 - **Annulation :** un « hold » de 10 sats accepté, puis annulé, et le voyageur remboursé (écart de solde 0). L'appel `pay_invoice` du voyageur a échoué (code NIP-47 `INTERNAL`) au lieu de répondre : l'issue se lit donc sur le portefeuille du guide avec `lookup_invoice`. C'est ce que fait l'étape de rapprochement.
 - **Limite du « hold » :** `lookup_invoice` a donné `settle_deadline` 976121 alors que `get_info` donnait `block_height` 976097 : une hauteur de bloc, 24 blocs plus loin, soit environ 4 h. La fenêtre de blocage en découle.
 - Les deux portefeuilles annoncent la même clé de nœud (voir Contraintes).
+- Un second essai le même jour, avec l'étape de rapprochement dans le script, a lu le « hold » annulé avec `lookup_invoice` comme `released` (état annulé côté portefeuille, écart de solde 0, alors que `pay_invoice` échouait encore avec `INTERNAL`), et de nouveau une échéance 24 blocs plus loin (976127 contre 976103) ; un blocage fait au tout début de la fenêtre y tient, sans bloc de reste au-delà de la marge.
 
 ## Crédits
 
