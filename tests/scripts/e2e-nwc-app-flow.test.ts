@@ -6,6 +6,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { runAppFlows } from "../../scripts/e2e-nwc-app-flow";
 import { buildNwcWorld, type NwcWorld } from "../../src/app/nwcWorld";
 import { createApp } from "../../src/server/app";
+import { startWatcher } from "../../src/server/watcher";
 import { makeLogger } from "../../src/log/redact";
 import { nonSimBackend } from "../helpers/nonSimBackend";
 
@@ -49,6 +50,43 @@ describe("e2e:nwc-app flows (offline, NWC wiring over the simulator)", () => {
     for (const e of ["e2e_app_start", "a_locked", "a_guide_settled", "audit:hold_limit_ok", "a_done", "b_overspend_refused", "b_locked", "b_cyclone_replay", "audit:refunded_cyclone", "b_done"]) expect(events).toContain(e);
     const all = lines.join("\n");
     for (const s of secrets) expect(all).not.toContain(s);
+  });
+
+  it("a lost settle reply and an unclear lock are resolved by the reconcile step, as over a busy wallet service", async () => {
+    let settles = 0;
+    const lookupsFailUntil = Date.now() + 2500; // the first lock's accept cannot be seen in time
+    const { backend, ledger } = nonSimBackend({ traveller: 10_000, guide_lemorne: 0 }, Date.now, (r) => ({
+      ...r,
+      lookupInvoice: async (h) => {
+        if (Date.now() < lookupsFailUntil) throw new Error("reply timeout");
+        return r.lookupInvoice(h);
+      },
+      settleHoldInvoice: async (p) => {
+        await r.settleHoldInvoice(p);
+        if (++settles === 1) throw new Error("reply timeout"); // settled at the wallet, but the reply was lost
+      },
+    }));
+    const w = await buildNwcWorld({ backend, config: { acceptTimeoutMs: 1000, pollMs: 20 } });
+    const watcher = startWatcher({ svc: () => w.svc, log: makeLogger(() => {}), intervalMs: 100 });
+    try {
+      const app = createApp({ world: () => w, reset: async () => {}, allowedHosts: [HOST] });
+      const call = async (path: string, body?: unknown) => {
+        const r = await app.request(`http://${HOST}${path}`, { method: body === undefined ? "GET" : "POST", headers: { host: HOST, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+        return { status: r.status, json: await r.json() };
+      };
+      const lines: string[] = [];
+      const r = await runAppFlows({ call, log: makeLogger((l) => lines.push(l)), newSecret: () => bytesToHex(randomBytes(32)), tours: { settle: "tour_lemorne", refund: "tour_lemorne_heritage" }, pollMs: 20, waitMs: 5000 });
+      expect(r.settle).toMatchObject({ finalState: "settled", travellerDeltaSats: -210, guideDeltaSats: 210 });
+      expect(r.refund).toMatchObject({ finalState: "refunded_cyclone", travellerDeltaSats: 0 });
+      expect(settles).toBe(1); // never settled twice
+      const events = lines.map((l) => JSON.parse(l).event as string);
+      expect(events).toContain("a_lock_unclear_waiting_for_reconcile");
+      expect(events).toContain("a_settle_unclear");
+      expect(lines.find((l) => l.includes('"a_guide_settled"'))).toContain('"seenBy":"reconcile"');
+      expect(ledger.balance("traveller")).toBe(10_000 - 210);
+    } finally {
+      watcher.stop();
+    }
   });
 
   it("refuses to start under the minimum traveller balance, before any booking", async () => {

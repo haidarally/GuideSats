@@ -1,9 +1,10 @@
 // The simulator dressed as a real backend (simulated: false, kind "nwc"), so the NWC wiring, the API's
 // NWC-mode controls and the e2e:nwc-app flows run offline. It counts the payer's pay calls.
 import { SimBackend, SimLedger } from "../../src/ln/sim";
-import type { LightningBackend } from "../../src/ln/backend";
+import type { LightningBackend, ReceiverWallet } from "../../src/ln/backend";
 
-export function nonSimBackend(balances: Record<string, number>, clock: () => number = Date.now) {
+/** `receiverHook` can make the guide's wallet slow or lossy, like a busy shared wallet service. */
+export function nonSimBackend(balances: Record<string, number>, clock: () => number = Date.now, receiverHook: (r: ReceiverWallet) => ReceiverWallet = (r) => r) {
   const ledger = new SimLedger({ clock, balances });
   const sim = new SimBackend(ledger);
   const pays: string[] = [];
@@ -22,7 +23,7 @@ export function nonSimBackend(balances: Record<string, number>, clock: () => num
         },
       };
     },
-    receiver: (id) => sim.receiver(id),
+    receiver: (id) => receiverHook(sim.receiver(id)),
   };
   return { backend, ledger, pays };
 }

@@ -70,7 +70,7 @@ if (NWC) {
 const watcher = startWatcher({ svc: () => world.svc, log, liveGdacs: process.env.GDACS_LIVE === "1" });
 await watcher.tick();
 
-const app = createApp({ world: () => world, reset, allowedHosts: [`${HOST}:${PORT}`, `localhost:${PORT}`] });
+const app = createApp({ world: () => world, reset, allowedHosts: [`${HOST}:${PORT}`, `localhost:${PORT}`], log });
 if (!existsSync("web/dist/index.html")) throw new Error("web/dist is missing: run `npm run build:web` (npm run demo does it for you)");
 app.use("/*", serveStatic({ root: "./web/dist" }));
 app.get("*", serveStatic({ path: "./web/dist/index.html" }));

@@ -32,6 +32,7 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/api/state`,
     reuseExistingServer: false,
     timeout: 120_000,
+    stdout: "pipe", // the server's redacted JSON log lines, prefixed [WebServer]
     // SIGTERM, not a kill: over NWC the server first cancels any hold still open at the guide's wallet.
     gracefulShutdown: { signal: "SIGTERM", timeout: 20_000 },
   },

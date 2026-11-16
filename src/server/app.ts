@@ -18,9 +18,9 @@ import { ServiceError } from "../app/service";
 import { MandateError } from "../domain/mandate";
 import { TransitionError } from "../domain/booking";
 import { loadFixture, replayShifted } from "../feeds/gdacs";
-import { redact } from "../log/redact";
+import { redact, type Logger } from "../log/redact";
 import type { BookingService } from "../app/service";
-import type { TxRecord } from "../ln/backend";
+import type { Budget, TxRecord } from "../ln/backend";
 
 /** What the server needs from a world: the service, plus a clock control on the simulator only. */
 export interface AppWorld {
@@ -32,6 +32,7 @@ export interface ServerContext {
   world(): AppWorld;
   reset(): Promise<void>;
   allowedHosts: string[]; // e.g. ["127.0.0.1:8787", "localhost:8787"]
+  log?: Logger; // unexpected errors are logged here (redacted), never sent to the client
 }
 
 const ID = /^[a-z0-9_]{1,40}$/;
@@ -72,6 +73,24 @@ export function demoControls(w: AppWorld) {
 const orNull = <T>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
 
 /**
+ * On a real backend the display-only facts that change slowly (the wallet budget, the block height) are read
+ * at most every 30 s: fewer calls to a shared wallet service. The money path never reads them from here.
+ */
+const SLOW_READS_MS = 30_000;
+const slowReads = new WeakMap<BookingService, { at: number; facts: Promise<{ budget: Budget | null; blockHeight: number | null }> }>();
+function slowFacts(svc: BookingService) {
+  const hit = slowReads.get(svc);
+  if (hit && !svc.backend.simulated && Date.now() - hit.at < SLOW_READS_MS) return hit.facts;
+  const first = svc.guides[0];
+  const facts = Promise.all([
+    orNull(svc.backend.payer(svc.travellerWalletId).getBudget()),
+    first ? svc.backend.receiver(first.id).getInfo().then((i) => i.blockHeight ?? null, () => null) : Promise.resolve(null),
+  ]).then(([budget, blockHeight]) => ({ budget, blockHeight }));
+  slowReads.set(svc, { at: Date.now(), facts });
+  return facts;
+}
+
+/**
  * Everything the PWA shows. Wallet data is read through the Lightning interface, so it is the same for SIM and
  * NWC. The wallet reads run in parallel (over NWC each one is a round trip to the wallet).
  */
@@ -79,10 +98,9 @@ export async function snapshot(w: AppWorld) {
   const { svc } = w;
   const travellerId = svc.travellerWalletId;
   const payer = svc.backend.payer(travellerId);
-  const firstGuide = svc.guides[0];
-  const [balanceSats, budget, transactions, guides, blockHeight] = await Promise.all([
+  const [balanceSats, { budget, blockHeight }, transactions, guides] = await Promise.all([
     orNull(payer.getBalance()),
-    orNull(payer.getBudget()),
+    slowFacts(svc),
     payer.listTransactions().then(newestFirst, () => []),
     Promise.all(
       svc.guides.map(async (g) => {
@@ -91,7 +109,6 @@ export async function snapshot(w: AppWorld) {
         return { ...g, balanceSats: bal, transactions: txs };
       }),
     ),
-    firstGuide ? svc.backend.receiver(firstGuide.id).getInfo().then((i) => i.blockHeight ?? null, () => null) : Promise.resolve(null),
   ]);
   const now = svc.now();
   const feed = svc.currentFeed();
@@ -147,6 +164,7 @@ export function createApp(ctx: ServerContext) {
     if (err instanceof BadRequest) return c.json({ error: err.message }, 400);
     if (err instanceof ServiceError) return c.json({ error: err.code }, 409);
     if (err instanceof MandateError || err instanceof TransitionError) return c.json({ error: err.message }, 409);
+    ctx.log?.warn("request_failed", { method: c.req.method, path: c.req.path, err }); // e.g. a wallet that did not answer
     return c.json({ error: "internal_error" }, 500); // never echo internals
   });
 
@@ -236,6 +254,7 @@ export function createApp(ctx: ServerContext) {
     const b = await json(c);
     const p = typeof b.preimage === "string" ? b.preimage.trim().toLowerCase() : "";
     if (!HEX32.test(p)) throw new BadRequest("preimage must be 32-byte hex");
+    ctx.log?.info("settle_requested", { bookingId: id });
     const booking = await ctx.world().svc.settleWithPreimage(id, p);
     return c.json({ ok: true, state: booking.state });
   });

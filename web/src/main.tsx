@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { fmtSats, getState, type State } from "./api";
 import { STRINGS, type Lang } from "./i18n";
 import { Traveller } from "./Traveller";
@@ -36,8 +36,14 @@ function App() {
   const [log, setLog] = useState<LogLine[]>([]);
   const t = STRINGS[lang];
 
+  // Live events come in bursts (an agent run is several steps): one state read per burst.
+  const pending = useRef<number | null>(null);
   const refresh = useCallback(() => {
-    getState().then(setS, (e) => setErr(String(e)));
+    if (pending.current !== null) return;
+    pending.current = window.setTimeout(() => {
+      pending.current = null;
+      getState().then(setS, (e) => setErr(String(e)));
+    }, 150);
   }, []);
   const onError = useCallback((e: unknown) => setErr(e instanceof Error ? e.message : String(e)), []);
 

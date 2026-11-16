@@ -39,8 +39,13 @@ function clip(page: Page) {
   };
 }
 
+/** The state, once both balances could be read (a shared wallet service can be slow to answer). */
 async function state(page: Page): Promise<S> {
-  return (await (await page.request.get("/api/state")).json()) as S;
+  for (let i = 0; ; i++) {
+    const s = (await (await page.request.get("/api/state")).json()) as S;
+    if ((s.traveller.balanceSats !== null && s.guides[0]?.balanceSats !== null) || i >= 20) return s;
+    await page.waitForTimeout(2000);
+  }
 }
 
 /** Never let an error banner pass unnoticed in a take. */
