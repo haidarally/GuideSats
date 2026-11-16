@@ -4,7 +4,7 @@
 // single use) -> atomic reserve of the mandate -> pay -> wait until the guide's wallet
 // reports the hold as accepted.
 import { cycloneVerdict, type GdacsFeed } from "../domain/cyclone";
-import { applyEvent, type Booking } from "../domain/booking";
+import { applyEvent, nextState, type Booking, type BookingEvent } from "../domain/booking";
 import { beginSpend, checkSpend, completeSpend, releaseSpend, revokeMandate, type Mandate } from "../domain/mandate";
 import { checkInvoice } from "../ln/invoiceCheck";
 import type { LightningBackend, PayOutcome, ReceiverWallet } from "../ln/backend";
@@ -25,6 +25,18 @@ export interface PaymentDeps {
 }
 
 export type PayResult = { ok: true; state: "locked" | "paid"; amountSats: number } | { ok: false; reason: string };
+
+/**
+ * Applies `event` to the booking as it is NOW in the store, with an atomic compare-and-set on its state.
+ * Returns null when the event is not legal from the current state or someone moved the booking first.
+ * Every transition made after an await goes through here, so two actors can never both apply one.
+ */
+export function transitionBooking(store: Store, id: string, event: BookingEvent, at: number, patch: Partial<Booking> = {}): Booking | null {
+  const b = store.getBooking(id);
+  if (!b || nextState(b.state, event) === null) return null;
+  const next: Booking = { ...applyEvent(b, event, at), ...patch };
+  return store.casBooking(next, b.state) ? next : null;
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

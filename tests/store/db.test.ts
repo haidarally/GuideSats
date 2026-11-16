@@ -16,6 +16,14 @@ describe("Store (node:sqlite)", () => {
     expect(s.getMandate("md_1")?.status).toBe("consuming");
     expect(s.mandateForBooking("bk_1")?.id).toBe("md_1");
   });
+  it("compare-and-set on the booking state refuses a stale state", () => {
+    const s = new Store();
+    const b = { id: "bk_1", tourId: "t", guideId: "g", travellerId: "tr", priceSats: 1000, tourStart: 0, tourEnd: 1, mode: "hold" as const, state: "locked" as const, paymentHash: null, invoice: null, history: [] };
+    s.putBooking(b);
+    expect(s.casBooking({ ...b, state: "settled" }, "locked")).toBe(true);
+    expect(s.casBooking({ ...b, state: "refunded_cyclone" }, "locked")).toBe(false); // a second actor read "locked" before the first wrote
+    expect(s.getBooking("bk_1")?.state).toBe("settled");
+  });
   it("one mandate per booking", () => {
     const s = new Store();
     s.insertMandate(m0);

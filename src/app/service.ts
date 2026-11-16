@@ -5,14 +5,14 @@
 //   the agent        -> agentFacade() (read, propose, request invoice, pay within mandate)
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
-import { applyEvent, isTerminal, type Booking, type PaymentMode } from "../domain/booking";
+import { applyEvent, isTerminal, type Booking, type BookingEvent, type PaymentMode } from "../domain/booking";
 import { cycloneVerdict, type CycloneVerdict, type GdacsFeed } from "../domain/cyclone";
 import { approveMandate, draftMandate, revokeMandate, type Mandate, type TravellerApproval } from "../domain/mandate";
 import type { LightningBackend, PayOutcome } from "../ln/backend";
 import { invoiceExpiresAt } from "../ln/invoiceCheck";
 import type { Logger } from "../log/redact";
 import type { Store } from "../store/db";
-import { payWithinMandate, type PayResult } from "./payments";
+import { payWithinMandate, transitionBooking, type PayResult } from "./payments";
 
 export interface Tour {
   id: string;
@@ -124,6 +124,22 @@ export class BookingService {
     return b;
   }
 
+  /** After an await: apply `event` to the booking as it is now, with a compare-and-set on its state. Null if it moved on. */
+  private transition(id: string, event: BookingEvent, at: number, patch: Partial<Booking> = {}): Booking | null {
+    const next = transitionBooking(this.store, id, event, at, patch);
+    if (next) this.emit({ type: "booking", booking: next });
+    return next;
+  }
+
+  /** The cyclone rule closes a booking: CYCLONE_CANCEL from whatever state it is in now, and an unspent mandate is revoked. */
+  private closeForCyclone(id: string, at: number): Booking | null {
+    const next = this.transition(id, "CYCLONE_CANCEL", at);
+    const m = this.store.mandateForBooking(id);
+    const b = this.store.getBooking(id);
+    if (b && isTerminal(b.state) && m && (m.status === "approved" || m.status === "pending_approval")) this.store.casMandate(revokeMandate(m), m.status);
+    return next;
+  }
+
   // ---------- traveller door ----------
 
   /**
@@ -220,7 +236,14 @@ export class BookingService {
     await this.backend.receiver(b.guideId).settleHoldInvoice(p);
     const at = this.clock();
     this.store.audit(at, "settled", { bookingId, amountSats: b.priceSats, paymentHash: b.paymentHash });
-    return this.save(applyEvent(this.booking(bookingId), "SETTLE", at));
+    const next = this.transition(bookingId, "SETTLE", at);
+    if (next) return next;
+    // The money moved, so never throw a generic error here: the reconcile step may have seen the settlement first.
+    const now = this.booking(bookingId);
+    if (now.state === "settled") return now;
+    this.store.audit(at, "settled_but_booking_changed", { bookingId, state: now.state });
+    this.log.warn("settled_but_booking_changed", { bookingId, state: now.state });
+    throw new ServiceError(`settled_but_booking_changed:${now.state}`);
   }
 
   // ---------- system: cyclone watcher + expiry ----------
@@ -245,22 +268,21 @@ export class BookingService {
         if (b.state === "locked" && b.paymentHash) {
           await this.backend.receiver(b.guideId).cancelHoldInvoice(b.paymentHash);
           this.store.audit(now, "refunded_cyclone", { bookingId: b.id, amountSats: b.priceSats, eventid });
-          this.save(applyEvent(this.booking(b.id), "CYCLONE_CANCEL", now));
+          this.closeForCyclone(b.id, now);
         } else if (m?.status === "consuming") {
           if (b.mode === "hold" && b.paymentHash) {
             // A lock is in flight, or its outcome is unknown. Cancel the hold invoice at the guide's wallet:
             // an accepted hold is refunded at once, and a payment that has not landed yet can no longer land.
             await this.backend.receiver(b.guideId).cancelHoldInvoice(b.paymentHash);
             this.store.audit(now, "cancelled_in_flight_hold", { bookingId: b.id, eventid });
-            this.save(applyEvent(this.booking(b.id), "CYCLONE_CANCEL", now));
+            this.closeForCyclone(b.id, now); // the reserved mandate is closed by the reconcile step
           } else {
             // Plan B: a plain payment in flight cannot be undone. Leave it to finish; the next tick sees "paid".
             this.store.audit(now, "cyclone_deferred_payment_in_flight", { bookingId: b.id, eventid });
           }
         } else {
-          if (m && (m.status === "approved" || m.status === "pending_approval")) this.store.casMandate(revokeMandate(m), m.status);
           this.store.audit(now, "skipped_cyclone", { bookingId: b.id, eventid });
-          this.save(applyEvent(b, "CYCLONE_CANCEL", now));
+          this.closeForCyclone(b.id, now);
         }
       } catch (e) {
         // Not refunded yet: say so, and let the next tick retry. Never mark a booking refunded on a failed call.
@@ -280,9 +302,8 @@ export class BookingService {
       if (!b || b.state !== "locked" || !b.paymentHash) continue;
       try {
         const s = await this.backend.receiver(b.guideId).lookupInvoice(b.paymentHash);
-        const fresh = this.booking(id); // the cyclone rule may have moved it during the await
-        if (fresh.state === "locked" && (s.state === "expired" || s.state === "cancelled")) {
-          this.save(applyEvent(fresh, "HOLD_EXPIRED", this.clock()));
+        // The cyclone rule may have moved it during the await: the compare-and-set then fails.
+        if ((s.state === "expired" || s.state === "cancelled") && this.transition(id, "HOLD_EXPIRED", this.clock())) {
           this.store.audit(this.clock(), "refunded_expired", { bookingId: id });
           changed.push(id);
         }

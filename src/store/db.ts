@@ -1,7 +1,7 @@
 // Persistence on node:sqlite (built into Node 22). One JSON column per row keeps it small;
 // the mandate status is also a real column so single use is an atomic compare-and-set.
 import { createRequire } from "node:module";
-import type { Booking } from "../domain/booking";
+import type { Booking, BookingState } from "../domain/booking";
 import type { Mandate, MandateStatus } from "../domain/mandate";
 import { redact } from "../log/redact";
 
@@ -38,6 +38,11 @@ export class Store {
   }
   listBookings(): Booking[] {
     return (this.db.prepare("SELECT json FROM bookings ORDER BY rowid").all() as { json: string }[]).map((r) => JSON.parse(r.json) as Booking);
+  }
+  /** Atomic compare-and-set on the booking state: returns false if someone else moved the booking first. */
+  casBooking(next: Booking, expected: BookingState): boolean {
+    const r = this.db.prepare("UPDATE bookings SET json = ? WHERE id = ? AND json_extract(json, '$.state') = ?").run(JSON.stringify(next), next.id, expected);
+    return Number(r.changes) === 1;
   }
 
   insertMandate(m: Mandate): void {
