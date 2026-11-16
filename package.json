@@ -16,6 +16,7 @@
     "demo:nwc": "node scripts/build-web.mjs && tsx src/server/main.ts --nwc",
     "e2e:sim": "tsx scripts/e2e-sim.ts",
     "e2e:nwc": "tsx scripts/e2e-nwc.ts",
+    "e2e:nwc-app": "tsx scripts/e2e-nwc-app.ts",
     "check": "npm run typecheck && npm test && npm run e2e:sim",
     "test:e2e": "playwright test"
   },
