@@ -59,6 +59,11 @@ describe("NWC adapter (fake client)", () => {
     await expect(be.receiver("g").makeHoldInvoice({ amountSats: 1, paymentHash: H, description: "", expirySecs: 60 })).rejects.toBeInstanceOf(HoldsUnsupportedError);
     expect(() => assertHoldSupport({ methods: ["make_hold_invoice"] })).toThrow("settle_hold_invoice, cancel_hold_invoice");
   });
+  it("reads the chain tip from get_info (block_height), when the wallet reports it", async () => {
+    const withHeight = new NwcBackend("regtest", { g: fake({ getInfo: async () => ({ pubkey: "02" + "33".repeat(32), network: "regtest", methods: [], block_height: 976_097 }) }).c });
+    expect((await withHeight.receiver("g").getInfo()).blockHeight).toBe(976_097);
+    expect((await new NwcBackend("regtest", { g: fake().c }).receiver("g").getInfo()).blockHeight).toBeUndefined();
+  });
   it("refuses a wallet on another network", async () => {
     const be = new NwcBackend("mainnet", { g: fake().c });
     await expect(be.receiver("g").getInfo()).rejects.toThrow("expected mainnet");
