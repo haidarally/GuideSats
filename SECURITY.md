@@ -3,7 +3,7 @@
 GuideSats lets software (an AI agent) spend a traveller's sats. The whole design starts from one rule:
 **the agent may only spend inside a mandate the traveller approved, and nothing the agent can reach can approve, widen or re-arm a mandate.**
 
-Status: hackathon prototype. The money path is tested on a SIMULATED Lightning backend. The Nostr Wallet Connect adapter is unit-tested against a fake client. Over NWC, against Alby's NWC Faucet test wallets (dummy balances that exist only inside one Alby Hub), two things ran (see the README). The hold-invoice path ran on its own: lock and settle, lock and cancel. The app itself ran too, through `npm run demo:nwc` and `npm run e2e:nwc-app`: mandate, reconcile step, hold-limit check and cyclone rule, with one hold settled and one refunded on the synthetic cyclone replay. The re-approval after an expired hold invoice has run only on the simulator.
+Status: hackathon prototype. The money path is tested on a SIMULATED Lightning backend. The Nostr Wallet Connect adapter is unit-tested against a fake client. Over NWC, against Alby's NWC Faucet test wallets (dummy balances that exist only inside one Alby Hub), two things ran (see the README). The hold-invoice path ran on its own: lock and settle, lock and cancel. The app itself ran too, through `npm run demo:nwc` and `npm run e2e:nwc-app`: mandate, reconcile step, hold-limit check and cyclone rule, with holds settled and holds refunded on the synthetic cyclone replay (two `e2e:nwc-app` runs, one of each in each run). The re-approval after an expired hold invoice has run only on the simulator.
 
 ## Assets
 
@@ -59,6 +59,7 @@ Status: hackathon prototype. The money path is tested on a SIMULATED Lightning b
 
 - Wallet-side budgets depend on the wallet. Without one, the app's mandate is the only cap.
 - A hold lasts only until the guide's wallet cancels it at its `settle_deadline`: on the faucet wallets a block height 24 blocks ahead, about 4 h (measured on 16 Nov 2026). Funds are therefore locked only from 50 min before the tour. Blocks arrive at random (on average one every 10 minutes); counting them as a Poisson process, a hold locked at the earliest moment survives a meeting on time with near certainty, a meeting 1 h late with a probability of about 99.9 %, and the very end of the 2 h buffer with about 94 %. When the wallet cancels first, the traveller is refunded; the guide is not paid.
+- The hold-limit check counts blocks in the guide wallet's own view of the chain. On 16 Nov 2026 the faucet hub reported block 976119 for about 45 minutes, then 976127; whether blocks were slow or the hub's view lagged is not verified. A jump larger than the 6-block margin plus the spare blocks could let the wallet cancel a hold before a late meeting; the traveller is then refunded.
 - After a tour is settled, a refund is a new payment that the guide starts (out of scope for v1).
 - In this local demo all three views run on one machine; in production the traveller, the guide and the agent would each have their own device and authentication.
 - `demo:nwc` keeps its bookings in memory. On Ctrl+C (or SIGTERM) it cancels every hold it still has open at the guide's wallet before it exits; a crash would leave such a hold to the wallet's own settle deadline (about 4 h on the faucet wallets), after which the traveller is refunded.

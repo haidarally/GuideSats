@@ -176,7 +176,7 @@ Each one refuses to start without those values, and `e2e:nwc-app` also refuses w
 - Both wallets report the same node key (see Constraints).
 - A second run the same day read each hold back with `lookup_invoice` and mapped it with the same function the reconcile step uses: the cancelled hold came out `released` (wallet state cancelled, traveller balance change 0, while `pay_invoice` again failed with `INTERNAL`). The deadline was again 24 blocks ahead (976127 against 976103); a lock made at the earliest moment of the window then fitted with 0 blocks to spare beyond the margin, so the window now keeps 1 block of slack.
 
-**`npm run e2e:nwc-app`** (the app itself, through its HTTP API) ran once and passed:
+**`npm run e2e:nwc-app`** (the app itself, through its HTTP API) ran twice and passed both times. The first run:
 
 - **Flow (a), lock and settle, 42 sats:**
   1. The traveller booked and approved with a new secret, and the agent locked.
@@ -188,7 +188,9 @@ Each one refuses to start without those values, and `e2e:nwc-app` also refuses w
   3. The agent locked, with 3 blocks to spare.
   4. The synthetic cyclone replay cancelled the hold: booking `refunded_cyclone`, traveller balance change 0. As in `e2e:nwc`, the traveller's `pay_invoice` for the cancelled hold failed instead of returning.
 
-The demo video was recorded with `npm run record:nwc` on the same wallets, with the same two flows in the PWA: 42 sats settled, 21 sats refunded. Earlier that day, three video takes and two debugging runs used tours of 210 and 120 sats (the ±210 rows in the video's history lists). In all, 924 dummy sats moved from the traveller to the guide across these runs (traveller 9 960 → 9 036). While a hold waited, the traveller's balance showed 10 sats more than the price as held; after the settle exactly the price had moved, and after the cancel nothing.
+The second run, on the code after a review (connection-string errors, the cyclone control, the French banner), gave the same results: 42 sats settled (deadline at block 976151, chain at 976127, 3 blocks to spare), the same four refusals, 21 sats refunded on the synthetic replay.
+
+The demo video was recorded with `npm run record:nwc` on the same wallets, with the same two flows in the PWA: 42 sats settled, 21 sats refunded. Earlier that day, three video takes and two debugging runs used tours of 210 and 120 sats (the ±210 rows in the video's history lists). In all, counting both `e2e:nwc-app` runs, 966 dummy sats moved from the traveller to the guide that day (traveller 9 960 → 8 994). While a hold waited, the traveller's balance showed 10 sats more than the price as held; after the settle exactly the price had moved, and after the cancel nothing.
 
 `e2e:nwc` drives the wallets directly; `demo:nwc` and `e2e:nwc-app` run the booking service itself over NWC (mandate, reconcile step, hold-limit check, cyclone rule). The re-approval after an expired hold invoice has run only on the simulator: it needs the invoice's 10 minutes to pass.
 

@@ -196,7 +196,7 @@ Chacune refuse de démarrer sans ces valeurs. `e2e:nwc-app` refuse aussi quand s
 - Les deux portefeuilles annoncent la même clé de nœud (voir Contraintes).
 - Un second essai le même jour a relu chaque « hold » avec `lookup_invoice` et l'a traduit avec la même fonction que l'étape de rapprochement : le « hold » annulé est ressorti `released` (état annulé côté portefeuille, écart de solde 0, alors que `pay_invoice` échouait encore avec `INTERNAL`). L'échéance était de nouveau 24 blocs plus loin (976127 contre 976103) ; un blocage fait au tout début de la fenêtre y tenait alors sans bloc de reste au-delà de la marge ; la fenêtre garde donc désormais 1 bloc de réserve.
 
-**`npm run e2e:nwc-app`** (l'appli elle-même, par son API HTTP) a tourné une fois et réussi :
+**`npm run e2e:nwc-app`** (l'appli elle-même, par son API HTTP) a tourné deux fois et réussi les deux fois. Le premier essai :
 
 - **Parcours (a), blocage puis encaissement, 42 sats :**
   1. Le voyageur a réservé et approuvé avec un nouveau secret, et l'agent a bloqué.
@@ -208,7 +208,9 @@ Chacune refuse de démarrer sans ces valeurs. `e2e:nwc-app` refuse aussi quand s
   3. L'agent a bloqué, avec 3 blocs d'avance.
   4. Le rejeu synthétique du cyclone a annulé le « hold » : réservation `refunded_cyclone`, écart de solde du voyageur 0. Comme dans `e2e:nwc`, le `pay_invoice` du voyageur pour le « hold » annulé a échoué au lieu de répondre.
 
-La vidéo de démo a été enregistrée avec `npm run record:nwc` sur les mêmes portefeuilles, avec les deux mêmes parcours dans la PWA : 42 sats encaissés, 21 sats remboursés. Plus tôt le même jour, trois prises de la vidéo et deux essais de débogage ont utilisé des excursions de 210 et 120 sats (les lignes ±210 de l'historique dans la vidéo). En tout, 924 sats fictifs sont passés du voyageur au guide au fil de ces essais (voyageur 9 960 → 9 036). Pendant qu'un « hold » attendait, le solde du voyageur montrait 10 sats de plus que le prix comme bloqués ; après l'encaissement, exactement le prix avait bougé, et rien après l'annulation.
+Le second essai, sur le code d'après une relecture (erreurs de chaîne de connexion, commande cyclone, bandeau en français), a donné les mêmes résultats : 42 sats encaissés (échéance au bloc 976151, chaîne au bloc 976127, 3 blocs d'avance), les quatre mêmes refus, 21 sats remboursés sur le rejeu synthétique.
+
+La vidéo de démo a été enregistrée avec `npm run record:nwc` sur les mêmes portefeuilles, avec les deux mêmes parcours dans la PWA : 42 sats encaissés, 21 sats remboursés. Plus tôt le même jour, trois prises de la vidéo et deux essais de débogage ont utilisé des excursions de 210 et 120 sats (les lignes ±210 de l'historique dans la vidéo). En tout, en comptant les deux essais de `e2e:nwc-app`, 966 sats fictifs sont passés du voyageur au guide ce jour-là (voyageur 9 960 → 8 994). Pendant qu'un « hold » attendait, le solde du voyageur montrait 10 sats de plus que le prix comme bloqués ; après l'encaissement, exactement le prix avait bougé, et rien après l'annulation.
 
 `e2e:nwc` pilote directement les portefeuilles ; `demo:nwc` et `e2e:nwc-app` font tourner le service de réservation lui-même sur NWC (mandat, rapprochement, contrôle de la limite du « hold », règle cyclone). La nouvelle approbation après une facture « hold » expirée n'a tourné que sur le simulateur : il faut attendre les 10 minutes de la facture.
 
