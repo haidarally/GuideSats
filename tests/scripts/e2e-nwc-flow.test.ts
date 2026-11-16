@@ -3,7 +3,8 @@
 // The reported outcome must still come from the guide's wallet: refunded, not unknown.
 import { describe, it, expect } from "vitest";
 import { randomBytes } from "node:crypto";
-import { bytesToHex } from "@noble/hashes/utils.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { runNwcFlow } from "../../scripts/e2e-nwc-flow";
 import { SimBackend, SimLedger } from "../../src/ln/sim";
 import { makeLogger } from "../../src/log/redact";
@@ -46,5 +47,32 @@ describe("e2e:nwc flow (offline, SIMULATED wallets)", () => {
     for (const s of secrets) expect(all).not.toContain(s);
     expect(all).not.toContain((await be.receiver("guide").getInfo()).pubkey);
     expect(ledger.allHolds().filter((h) => h.state === "accepted")).toEqual([]); // nothing left in a hold
+  });
+
+  it("a hold that was never accepted is cancelled before the run gives up, so a late payment cannot lock sats", async () => {
+    const ledger = new SimLedger({ clock: Date.now, balances: { traveller: 1000, guide: 0 } });
+    const be = new SimBackend(ledger);
+    const stuck: PayerWallet = { ...be.payer("traveller"), payInvoice: () => new Promise(() => {}) }; // the payment is still on its way
+    const secrets: string[] = [];
+    await expect(
+      runNwcFlow({
+        payer: stuck,
+        receiver: be.receiver("guide"),
+        network: be.network,
+        payeeProof: be.payeeProof,
+        log: makeLogger(() => {}),
+        amountSats: 10,
+        newSecret: () => {
+          const s = bytesToHex(randomBytes(32));
+          secrets.push(s);
+          return s;
+        },
+        pollMs: 1,
+        maxPolls: 3,
+        payReplyMs: 10,
+      }),
+    ).rejects.toThrow("hold never accepted");
+    const h = bytesToHex(sha256(hexToBytes(secrets[0]!)));
+    expect(ledger.holdState("guide", h)).toBe("cancelled");
   });
 });

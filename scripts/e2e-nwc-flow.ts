@@ -108,9 +108,11 @@ export async function runNwcFlow(d: NwcFlowDeps): Promise<Record<"settle" | "can
     }
   } finally {
     if (open) {
-      // Never leave this run's sats in a hold: cancel whatever is still accepted.
+      // Never leave this run's sats in a hold: cancel whatever is still accepted, and an invoice still open,
+      // so that a payment still on its way cannot be accepted after the run.
       try {
-        if ((await g.lookupInvoice(open)).state === "accepted") {
+        const left = (await g.lookupInvoice(open)).state;
+        if (left === "accepted" || left === "open") {
           await g.cancelHoldInvoice(open);
           d.log.warn("cleanup_hold_cancelled", { paymentHash: open });
         }
