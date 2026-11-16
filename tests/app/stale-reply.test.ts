@@ -93,4 +93,38 @@ describe("late wallet replies", () => {
     // H1 can never come back.
     await expect(w.svc.settleWithPreimage(booking.id, s1.p)).rejects.toThrow("preimage_mismatch");
   });
+
+  it("plan B: an invoice request that answers while a payment is in flight does not move the payment's hash", async () => {
+    const w = await slowWorld();
+    const { booking } = w.svc.proposeBooking("tour_chamarel", "on_completion");
+    w.svc.approveMandate(booking.id, { actor: "traveller", paymentHash: null, at: w.clock() });
+    w.setNow(booking.tourStart + HOUR);
+    w.svc.confirmTourHappened(booking.id);
+
+    // The agent asks for the guide's invoice twice (two runs at once); the wallet is slow to answer both.
+    w.holdMakes(true);
+    const r1 = w.svc.requestInvoice(booking.id);
+    const r2 = w.svc.requestInvoice(booking.id);
+    await settle();
+    w.heldMakes[0]!();
+    const inv1 = await r1;
+    const x1 = w.svc.booking(booking.id).paymentHash;
+
+    // The first run pays invoice 1. The payment leaves, but the reply is lost.
+    w.holdPay.add(inv1);
+    const pay = w.svc.payWithinMandate(booking.id, inv1);
+    await settle();
+    expect(w.svc.mandate(booking.id)?.status).toBe("consuming");
+
+    // The second request answers now: it must not repin the booking to a hash nobody is paying.
+    w.heldMakes[1]!();
+    await expect(r2).rejects.toThrow("payment_in_flight");
+    expect(w.svc.booking(booking.id).paymentHash).toBe(x1);
+
+    void w.travellerPayer().payInvoice(inv1).then(() => w.heldPays.get(inv1)!({ status: "unknown", error: "NO_REPLY" }));
+    // The reconcile step looks up the hash that was paid, so the payment is resolved.
+    expect(await pay).toMatchObject({ ok: true, state: "paid" });
+    expect(w.svc.booking(booking.id).state).toBe("paid");
+    expect(w.ledger.balance("guide_chamarel")).toBe(w.seed.guides.find((g) => g.id === "guide_chamarel")!.walletSats + booking.priceSats);
+  });
 });

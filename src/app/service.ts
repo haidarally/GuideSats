@@ -343,7 +343,12 @@ export class BookingService {
     if (b.mode === "on_completion") {
       if (!b.confirmedAt) throw new ServiceError("not_confirmed_by_traveller");
       const made = await this.backend.receiver(b.guideId).makeInvoice({ amountSats: b.priceSats, description: t.title.en, expirySecs: 600 });
-      this.save({ ...this.booking(bookingId), invoice: made.invoice, paymentHash: made.paymentHash });
+      // A payment may have started on an earlier invoice while the wallet answered (two agent runs at once).
+      // Its hash is pinned on the booking, and the reconcile step looks it up: never move it under that payment.
+      const fresh = this.booking(bookingId);
+      const status = this.store.mandateForBooking(bookingId)?.status;
+      if (fresh.state !== "mandated" || status !== "approved") throw new ServiceError(status === "consuming" ? "payment_in_flight" : `not_mandated:${fresh.state}`);
+      this.save({ ...fresh, invoice: made.invoice, paymentHash: made.paymentHash });
       return made.invoice;
     }
     if (!m.paymentHash) throw new ServiceError("no_approved_mandate");
