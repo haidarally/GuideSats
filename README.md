@@ -38,7 +38,7 @@ You can also type a request for the agent, in English or French: *"book the lago
 ## Test it
 
 ```bash
-npm run check        # typecheck + 201 unit/property/API tests + the 6 end-to-end scenarios; offline, no keys
+npm run check        # typecheck + 206 unit/property/API tests + the 6 end-to-end scenarios; offline, no keys
 npm test             # unit, property and API tests only (Vitest)
 npm run e2e:sim      # the six demo scenarios (settle, cyclone refund, refusals, plan B, re-approval, hold limit), as a report
 npm run test:e2e     # Playwright: 5 flows at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once

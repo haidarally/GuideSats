@@ -49,9 +49,11 @@ export interface NwcTx {
 
 const NETWORKS: Record<string, Network> = { mainnet: "mainnet", bitcoin: "mainnet", testnet: "testnet", signet: "signet", regtest: "regtest" };
 
-export function parseNetwork(s: string | undefined): Network {
+/** `source` names where the value came from. The value itself is never echoed: a connection string pasted into
+ * NWC_NETWORK by mistake would otherwise end up on the screen. */
+export function parseNetwork(s: string | undefined, source = "network"): Network {
   const n = NETWORKS[(s ?? "").trim().toLowerCase()];
-  if (!n) throw new Error(`unknown network: ${JSON.stringify(s ?? "")}`);
+  if (!n) throw new Error(`unknown ${source}: use mainnet, testnet, signet or regtest (the value is not shown)`);
   return n;
 }
 
@@ -112,7 +114,7 @@ export class NwcBackend implements LightningBackend {
 
   private async info(id: string): Promise<WalletInfo> {
     const i = await this.client(id).getInfo();
-    const net = parseNetwork(i.network);
+    const net = parseNetwork(i.network, `network reported by wallet "${id}"`);
     if (net !== this.network) throw new Error(`wallet "${id}" is on ${net}, expected ${this.network}`);
     return { pubkey: i.pubkey, methods: [...i.methods], network: net, blockHeight: typeof i.block_height === "number" ? i.block_height : undefined };
   }
@@ -189,13 +191,29 @@ export function requireNwcEnv(env: NwcEnv): { traveller: string; guide: string; 
   for (const k of ["NWC_TRAVELLER_URL", "NWC_GUIDE_URL"] as const) {
     if (!env[k]!.startsWith("nostr+walletconnect://")) throw new Error(`${k} is not a nostr+walletconnect:// URL`);
   }
-  return { traveller: env.NWC_TRAVELLER_URL!, guide: env.NWC_GUIDE_URL!, network: parseNetwork(env.NWC_NETWORK) };
+  return { traveller: env.NWC_TRAVELLER_URL!, guide: env.NWC_GUIDE_URL!, network: parseNetwork(env.NWC_NETWORK, "NWC_NETWORK") };
 }
 
 /** Builds the real backend. The SDK is imported lazily so tests and the demo never load it. */
 export async function nwcBackendFromEnv(env: NwcEnv, walletIds: { traveller: string; guide: string }): Promise<NwcBackend> {
   const cfg = requireNwcEnv(env);
   const { NWCClient } = await import("@getalby/sdk/nwc");
-  const mk = (url: string) => new NWCClient({ nostrWalletConnectUrl: url }) as unknown as NwcClientLike;
-  return new NwcBackend(cfg.network, { [walletIds.traveller]: mk(cfg.traveller), [walletIds.guide]: mk(cfg.guide) });
+  // A string the SDK cannot parse must not come back in the error: Node's URL errors keep the whole input,
+  // secret included, in a property that an uncaught error prints. Only the env key is named.
+  const mk = (key: "NWC_TRAVELLER_URL" | "NWC_GUIDE_URL", url: string): NwcClientLike => {
+    try {
+      return new NWCClient({ nostrWalletConnectUrl: url }) as unknown as NwcClientLike;
+    } catch {
+      throw new Error(`${key} is not a valid NWC connection string (the value is not shown)`);
+    }
+  };
+  const traveller = mk("NWC_TRAVELLER_URL", cfg.traveller);
+  let guide: NwcClientLike;
+  try {
+    guide = mk("NWC_GUIDE_URL", cfg.guide);
+  } catch (e) {
+    traveller.close();
+    throw e;
+  }
+  return new NwcBackend(cfg.network, { [walletIds.traveller]: traveller, [walletIds.guide]: guide });
 }
