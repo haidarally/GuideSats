@@ -44,7 +44,7 @@ export const MAURITIUS: CycloneRuleConfig = {
 export interface CycloneVerdict {
   cancel: boolean;
   reason: "cyclone_alert" | "no_matching_alert";
-  event?: { eventid: number; name: string; alertlevel: string; fromdate: string; todate: string };
+  event?: { eventid: number; name: string; alertlevel: string; fromdate: string; todate: string; synthetic?: true }; // synthetic: the demo replay
 }
 
 /** GDACS timestamps are UTC without a zone suffix. */
@@ -85,7 +85,7 @@ export function cycloneVerdict(feed: GdacsFeed, w: TourWindow, cfg: CycloneRuleC
       return {
         cancel: true,
         reason: "cyclone_alert",
-        event: { eventid: p.eventid, name: p.name ?? p.eventname ?? "", alertlevel: p.alertlevel, fromdate: p.fromdate, todate: p.todate },
+        event: { eventid: p.eventid, name: p.name ?? p.eventname ?? "", alertlevel: p.alertlevel, fromdate: p.fromdate, todate: p.todate, ...(p.synthetic === true ? { synthetic: true as const } : {}) },
       };
     }
   }

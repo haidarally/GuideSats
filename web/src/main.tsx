@@ -28,6 +28,12 @@ function describe(step: { call?: { tool: string; args: Record<string, unknown> }
   return { at: Date.now(), text: "agent started" };
 }
 
+/** The demo replay's name carries the server's English marker: show the marker in the screen's language. */
+function cycloneName(e: State["cyclone"]["event"], tag: string): string {
+  if (!e) return "";
+  return e.synthetic ? `${e.name.replace("(SYNTHETIC REPLAY)", "").trim()} (${tag})` : e.name;
+}
+
 function App() {
   const [lang, setLang] = useState<Lang>(initialLang);
   const [tab, setTab] = useState<Tab>("traveller");
@@ -85,7 +91,7 @@ function App() {
         </div>
       )}
       <div class={`banner ${s.cyclone.active ? "storm" : "calm"}`} data-testid="cyclone-banner">
-        {s.cyclone.active ? `🌀 ${t.cycloneActive}: ${s.cyclone.event?.name} (${s.cyclone.event?.alertlevel})` : t.cycloneNone}
+        {s.cyclone.active ? `🌀 ${t.cycloneActive}: ${cycloneName(s.cyclone.event, t.syntheticReplay)} (${s.cyclone.event?.alertlevel})` : t.cycloneNone}
       </div>
       {err && (
         <div class="banner error" role="alert" onClick={() => setErr(null)}>

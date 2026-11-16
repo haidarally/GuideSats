@@ -32,7 +32,8 @@ test("book -> approve -> agent locks -> guide settles", async ({ page, request }
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test("cyclone alert refunds a locked booking", async ({ page, request }) => {
+test("cyclone alert refunds a locked booking", async ({ page, request }, info) => {
+  const fr = info.project.name.endsWith("fr");
   await request.post("/api/demo/reset", { data: {} });
   await page.goto("/");
   await page.getByTestId("book-tour_lagoon").click();
@@ -41,7 +42,11 @@ test("cyclone alert refunds a locked booking", async ({ page, request }) => {
   await expect(page.getByTestId("traveller-balance")).toContainText("108 000");
   await page.getByTestId("tab-agent").click();
   await page.getByTestId("cyclone").click();
-  await expect(page.getByTestId("cyclone-banner")).toContainText("BELAL");
+  const banner = page.getByTestId("cyclone-banner");
+  await expect(banner).toContainText("BELAL");
+  // The demo replay is named so in the screen's language.
+  await expect(banner).toContainText(fr ? "REJEU SYNTHÉTIQUE" : "SYNTHETIC REPLAY");
+  if (fr) await expect(banner).not.toContainText("SYNTHETIC REPLAY");
   await page.getByTestId("tab-traveller").click();
   await expect(page.getByTestId("traveller-balance")).toContainText("120 000");
 });

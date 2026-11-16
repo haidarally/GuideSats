@@ -11,7 +11,7 @@ export interface Booking {
 export interface State {
   simulated: boolean; backend: string; network: string; blockHeight: number | null; now: number;
   controls: { cyclone: boolean; attack: boolean; expireInvoice: boolean; advance: boolean; reset: boolean };
-  cyclone: { active: boolean; event?: { name: string; alertlevel: string }; source: string };
+  cyclone: { active: boolean; event?: { name: string; alertlevel: string; synthetic?: true }; source: string };
   traveller: { id: string; balanceSats: number | null; budget: { totalSats: number; usedSats: number; renewal: string } | null; transactions: Tx[] };
   guides: Guide[]; tours: Tour[]; bookings: Booking[];
 }
