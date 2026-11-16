@@ -4,7 +4,8 @@
 // and holds cancelled and refunded).
 //
 // Least privilege: the traveller's connection should allow only pay_invoice (+ get_budget,
-// get_balance); the guide's only make/settle/cancel_hold_invoice + lookup_invoice.
+// get_balance); the guide's only make/settle/cancel_hold_invoice + lookup_invoice + get_info. The screens of
+// demo:nwc also read get_balance and list_transactions on both wallets.
 // Connection strings come from env vars (see .env.example) and are never logged.
 import type { Network } from "./bolt11";
 import {

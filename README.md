@@ -100,7 +100,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.m
 ## Security by design (short)
 
 - A threat model with 19 threats, each mapped to its mitigation and the test that covers it ([SECURITY.md](SECURITY.md)).
-- Least privilege. The traveller's NWC connection needs only `pay_invoice` (plus `get_budget` and `get_balance`). The guide's needs only the hold-invoice methods, `lookup_invoice` and `get_info`.
+- Least privilege. For the money, the traveller's NWC connection needs only `pay_invoice` (plus `get_budget` and `get_balance`), and the guide's only the hold-invoice methods, `lookup_invoice` and `get_info`. For their screens and checks, `demo:nwc` and `e2e:nwc-app` also read `get_balance` on both wallets, and `list_transactions` for the history (optional: without it the history stays empty).
 - NWC connection strings are read only from env vars. `.env` is git-ignored and never logged. The real SDK is loaded only on the opt-in real path.
 - The preimage P is made and kept on the traveller's phone. The agent never sees P or any wallet secret.
 - Logs and the audit trail go through a redactor, with a snapshot test. No PII is collected.

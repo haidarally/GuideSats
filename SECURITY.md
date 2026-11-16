@@ -52,6 +52,7 @@ Status: hackathon prototype. The money path is tested on a SIMULATED Lightning b
 
 - Traveller's NWC connection: `pay_invoice` (plus `get_balance`, and `get_budget` if the wallet offers budgets). Set a wallet budget where the wallet supports one (NWC-13); then the wallet enforces the cap as well as the app.
 - Guide's NWC connection: `make_hold_invoice`, `settle_hold_invoice`, `cancel_hold_invoice`, `lookup_invoice` and `get_info` (for the block height) only.
+- The money path needs nothing more. For their screens and checks, `demo:nwc` and `e2e:nwc-app` also read `get_balance` on both wallets (they do not start without it), and `list_transactions` for the history (optional: without it the history stays empty).
 - Faucet test wallets come with fixed permissions that we cannot narrow; we say so in the demo.
 
 ## Known limits (honest list)

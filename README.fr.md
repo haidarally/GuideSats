@@ -120,6 +120,7 @@ Détails : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Modèle de menaces : [S
 - **Moindre privilège.**
   - La connexion NWC du voyageur n'a besoin que de `pay_invoice` (plus `get_budget` et `get_balance`).
   - Celle du guide n'a besoin que des méthodes « hold », de `lookup_invoice` et de `get_info`.
+  - Pour leurs écrans et leurs contrôles, `demo:nwc` et `e2e:nwc-app` lisent aussi `get_balance` sur les deux portefeuilles, et `list_transactions` pour l'historique (facultatif : sans lui, l'historique reste vide).
 - **Chaînes de connexion NWC.** Elles ne sont lues que dans des variables d'environnement. `.env` est ignoré par git et jamais journalisé.
 - **Le secret P.** Il est créé et gardé sur le téléphone du voyageur. L'agent ne voit jamais P ni aucun secret de portefeuille.
 - **Journaux et piste d'audit.** Ils passent par un filtre de caviardage, vérifié par un test d'instantané. Aucune donnée personnelle n'est collectée.
