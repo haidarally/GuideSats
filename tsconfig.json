@@ -28,6 +28,7 @@
     "web/src",
     "scripts",
     "vitest.config.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "playwright.record.config.ts"
   ]
 }
