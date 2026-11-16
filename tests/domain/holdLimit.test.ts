@@ -14,6 +14,10 @@ describe("settle_deadline: block height or unix seconds", () => {
   it("anything else is no deadline", () => {
     for (const v of [undefined, null, 0, -5, 1.5, "976121", Number.NaN, Infinity]) expect(parseSettleDeadline(v)).toBeNull();
   });
+  it("a value in milliseconds is not read as seconds thousands of years ahead: no deadline (fails closed)", () => {
+    expect(parseSettleDeadline(1_763_300_000_000)).toBeNull();
+    expect(holdFits({ settleDeadline: 1_763_300_000_000, blockHeight: 976_097, now: NOW, settleBy: NOW + HOUR })).toMatchObject({ ok: false, reason: "no_settle_deadline" });
+  });
 });
 
 describe("the lock window from the measured hold limit", () => {

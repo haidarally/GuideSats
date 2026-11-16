@@ -11,6 +11,8 @@
 
 /** As in Bitcoin's nLockTime: values below this are block heights, values at or above it are unix seconds. */
 export const UNIX_TIME_THRESHOLD = 500_000_000;
+/** Unix seconds at or above this (the year 2286) cannot be a hold deadline: most likely milliseconds. Refused. */
+export const UNIX_SECONDS_MAX = 10_000_000_000;
 /** Bitcoin's 10-minute target. Only an estimate, used only where a clock time is unavoidable. */
 export const BLOCK_MS = 10 * 60_000;
 /** The hold limit measured on the faucet wallets (see above). */
@@ -37,7 +39,7 @@ export function lockLeadMs(holdLimitBlocks = MEASURED_HOLD_LIMIT_BLOCKS, marginB
 export type SettleDeadline = { kind: "height"; height: number } | { kind: "unix"; atMs: number };
 
 export function parseSettleDeadline(v: unknown): SettleDeadline | null {
-  if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) return null;
+  if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0 || v >= UNIX_SECONDS_MAX) return null;
   return v >= UNIX_TIME_THRESHOLD ? { kind: "unix", atMs: v * 1000 } : { kind: "height", height: v };
 }
 
