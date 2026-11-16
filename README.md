@@ -16,7 +16,7 @@ Needs Node 22.13 or newer. No accounts, no keys, no Docker.
 npm install && npm run demo
 ```
 
-Open http://127.0.0.1:8787 on this machine (it binds to 127.0.0.1 only). A phone-width browser window is the intended view. Seed data: one traveller wallet with 120 000 sats and three fictional guides with tours. The tours start within the hour, inside the lock window, so the agent may lock at once.
+Open http://127.0.0.1:8787 on this machine (it binds to 127.0.0.1 only). A phone-width browser window is the intended view. Seed data: one traveller wallet with 120 000 sats and three fictional guides with tours. The tours start within the hour, inside the lock window, so the agent may lock at once. If the server has been running for a while, press **Reset demo** (Agent tab) first.
 
 The happy path takes about 30 seconds:
 
@@ -162,7 +162,9 @@ It was run over NWC against Alby's NWC Faucet test wallets on 16 Nov 2026. Their
 - **Cancel:** a 10-sat hold was accepted, then cancelled, and the traveller was refunded (balance change 0). The traveller's `pay_invoice` call failed (NIP-47 code `INTERNAL`) instead of returning, so the outcome is read back from the guide's wallet with `lookup_invoice`. That is what the reconcile step does.
 - **Hold limit:** `lookup_invoice` gave `settle_deadline` 976121 while `get_info` gave `block_height` 976097: a block height 24 blocks ahead, about 4 h. The lock window above is derived from it.
 - Both wallets report the same node key (see Constraints).
-- A second run the same day, with the reconcile step in the script, reported the cancelled hold from `lookup_invoice` as `released` (wallet state cancelled, traveller balance change 0, while `pay_invoice` again failed with `INTERNAL`), and again a deadline 24 blocks ahead (976127 against 976103); a lock made at the earliest moment of the window fits it with 0 blocks to spare beyond the margin.
+- A second run the same day read each hold back with `lookup_invoice` and mapped it with the same function the reconcile step uses: the cancelled hold came out `released` (wallet state cancelled, traveller balance change 0, while `pay_invoice` again failed with `INTERNAL`). The deadline was again 24 blocks ahead (976127 against 976103); a lock made at the earliest moment of the window fits it with 0 blocks to spare beyond the margin.
+
+That run drives the wallets directly. The booking service itself (mandate, reconcile step, hold-limit check, re-approval) has so far run only on the SIMULATED backend.
 
 ## Credits
 

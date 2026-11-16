@@ -16,7 +16,7 @@ Il faut Node 22.13 ou plus récent. Ni compte, ni clé, ni Docker.
 npm install && npm run demo
 ```
 
-Ouvrez http://127.0.0.1:8787 sur cette machine (le serveur n'écoute que sur 127.0.0.1). La vue prévue est une fenêtre de la largeur d'un téléphone. Données de départ : un portefeuille voyageur de 120 000 sats et trois guides fictifs avec leurs excursions. Les excursions commencent dans l'heure, dans la fenêtre de blocage : l'agent peut donc bloquer tout de suite.
+Ouvrez http://127.0.0.1:8787 sur cette machine (le serveur n'écoute que sur 127.0.0.1). La vue prévue est une fenêtre de la largeur d'un téléphone. Données de départ : un portefeuille voyageur de 120 000 sats et trois guides fictifs avec leurs excursions. Les excursions commencent dans l'heure, dans la fenêtre de blocage : l'agent peut donc bloquer tout de suite. Si le serveur tourne depuis un moment, appuyez d'abord sur **Réinitialiser la démo** (onglet Agent).
 
 Le parcours principal prend environ 30 secondes :
 
@@ -175,7 +175,9 @@ Il a été lancé sur NWC contre les portefeuilles de test NWC Faucet d'Alby le 
 - **Annulation :** un « hold » de 10 sats accepté, puis annulé, et le voyageur remboursé (écart de solde 0). L'appel `pay_invoice` du voyageur a échoué (code NIP-47 `INTERNAL`) au lieu de répondre : l'issue se lit donc sur le portefeuille du guide avec `lookup_invoice`. C'est ce que fait l'étape de rapprochement.
 - **Limite du « hold » :** `lookup_invoice` a donné `settle_deadline` 976121 alors que `get_info` donnait `block_height` 976097 : une hauteur de bloc, 24 blocs plus loin, soit environ 4 h. La fenêtre de blocage en découle.
 - Les deux portefeuilles annoncent la même clé de nœud (voir Contraintes).
-- Un second essai le même jour, avec l'étape de rapprochement dans le script, a lu le « hold » annulé avec `lookup_invoice` comme `released` (état annulé côté portefeuille, écart de solde 0, alors que `pay_invoice` échouait encore avec `INTERNAL`), et de nouveau une échéance 24 blocs plus loin (976127 contre 976103) ; un blocage fait au tout début de la fenêtre y tient, sans bloc de reste au-delà de la marge.
+- Un second essai le même jour a relu chaque « hold » avec `lookup_invoice` et l'a traduit avec la même fonction que l'étape de rapprochement : le « hold » annulé est ressorti `released` (état annulé côté portefeuille, écart de solde 0, alors que `pay_invoice` échouait encore avec `INTERNAL`). L'échéance était de nouveau 24 blocs plus loin (976127 contre 976103) ; un blocage fait au tout début de la fenêtre y tient, sans bloc de reste au-delà de la marge.
+
+Cet essai pilote directement les portefeuilles. Le service de réservation lui-même (mandat, rapprochement, contrôle de la limite du « hold », nouvelle approbation) n'a tourné pour l'instant que sur le Lightning SIMULÉ.
 
 ## Crédits
 

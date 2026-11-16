@@ -3,7 +3,7 @@
 GuideSats lets software (an AI agent) spend a traveller's sats. The whole design starts from one rule:
 **the agent may only spend inside a mandate the traveller approved, and nothing the agent can reach can approve, widen or re-arm a mandate.**
 
-Status: hackathon prototype. The money path is tested on a SIMULATED Lightning backend. The Nostr Wallet Connect adapter is unit-tested against a fake client, and its hold-invoice path (lock and settle, lock and cancel) was run over NWC against Alby's NWC Faucet test wallets, whose dummy balances exist only inside one Alby Hub (see the README).
+Status: hackathon prototype. The money path is tested on a SIMULATED Lightning backend. The Nostr Wallet Connect adapter is unit-tested against a fake client, and its hold-invoice path (lock and settle, lock and cancel) was run over NWC against Alby's NWC Faucet test wallets, whose dummy balances exist only inside one Alby Hub (see the README). The booking service itself (mandate, reconcile step, hold-limit check, re-approval) has run only on the simulator.
 
 ## Assets
 
