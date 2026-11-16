@@ -179,7 +179,7 @@ Chacune refuse de démarrer sans ces valeurs. `e2e:nwc-app` refuse aussi quand s
 
 - Le voyageur et le guide sont les deux portefeuilles de `.env`. Il y a un seul guide, Kaya Treks, avec deux excursions de 42 et 21 sats.
 - L'heure est réelle, et la hauteur de bloc est celle que donne le portefeuille du guide. Les excursions commencent environ 30 minutes après le démarrage du serveur, dans la fenêtre de blocage de 50 min ; relancez le serveur pour de nouveaux horaires.
-- Chaque écran dit quel backend tourne : « Portefeuilles de test NWC Faucet : soldes fictifs, aucun vrai sat », avec le réseau et la hauteur de bloc. Ce texte est fixe : l'appli ne sait pas distinguer des portefeuilles de test de vrais portefeuilles, donc `.env` ne doit jamais contenir que des portefeuilles de test.
+- Chaque écran dit quel backend tourne : « Portefeuilles de test NWC Faucet : soldes fictifs, aucun vrai sat », avec le réseau et la hauteur de bloc. Ce texte est fixe : l'appli ne sait pas distinguer des portefeuilles de test de vrais portefeuilles, donc `.env` ne doit contenir que des portefeuilles de test.
 - L'API refuse, et la PWA cache, toute commande qui truque le temps ou la chaîne (avancer, laisser expirer une facture), ainsi que la réinitialisation.
 - L'alerte cyclone reste disponible comme REJEU SYNTHÉTIQUE de BELAL-24, pour montrer un remboursement. **Pousser l'agent à trop dépenser** forge ses factures sur place (signées par une clé jetable), et elles sont refusées avant tout appel au portefeuille.
 - Sur Ctrl+C, le serveur annule d'abord tout « hold » qu'il a encore d'ouvert chez le portefeuille du guide.
