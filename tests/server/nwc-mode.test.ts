@@ -6,6 +6,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { buildNwcWorld, loadNwcSeed, NWC_SEED_MAX_SATS, releaseHolds } from "../../src/app/nwcWorld";
 import { buildSimWorld } from "../../src/app/world";
+import type { GdacsFeed } from "../../src/domain/cyclone";
 import { lockLeadMs } from "../../src/domain/holdLimit";
 import { createApp } from "../../src/server/app";
 import { makeLogger } from "../../src/log/redact";
@@ -13,9 +14,9 @@ import { nonSimBackend } from "../helpers/nonSimBackend";
 
 const HOST = "127.0.0.1:8787";
 
-async function setup() {
+async function setup(feed?: () => GdacsFeed) {
   const nb = nonSimBackend({ traveller: 10_000, guide_lemorne: 0 });
-  const w = await buildNwcWorld({ backend: nb.backend, config: { acceptTimeoutMs: 2000, pollMs: 20 } });
+  const w = await buildNwcWorld({ backend: nb.backend, feed, config: { acceptTimeoutMs: 2000, pollMs: 20 } });
   const app = createApp({ world: () => w, reset: async () => {}, allowedHosts: [HOST] });
   const call = (path: string, body?: unknown) =>
     app.request(`http://${HOST}${path}`, {
@@ -84,6 +85,32 @@ describe("NWC mode", () => {
     expect(s.cyclone.event?.name).toContain("SYNTHETIC REPLAY");
     expect(s.bookings[0]!.state).toBe("refunded_cyclone");
     expect(ledger.balance("traveller")).toBe(10_000);
+  });
+
+  it("the cyclone control adds and removes only its synthetic replay: a live alert is never cleared or replaced", async () => {
+    // A live GDACS feed (GDACS_LIVE=1) with a real Orange alert for Mauritius, around now.
+    const iso = (ms: number) => new Date(ms).toISOString().slice(0, 19);
+    const now = Date.now();
+    const live: GdacsFeed = {
+      type: "FeatureCollection",
+      features: [{ properties: { eventtype: "TC", eventid: 7, name: "Tropical Cyclone LIVE-26", alertlevel: "Orange", iscurrent: "true", affectedcountries: [{ iso3: "MUS", countryname: "Mauritius" }], fromdate: iso(now - 3_600_000), todate: iso(now + 86_400_000) } }],
+    };
+    const { call, ledger } = await setup(() => live);
+    type S = { cyclone: { active: boolean; event?: { name: string } } };
+    const cyclone = async () => ((await (await call("/api/state")).json()) as S).cyclone;
+    expect(await cyclone()).toMatchObject({ active: true, event: { name: "Tropical Cyclone LIVE-26" } });
+    // "Clear cyclone alert" is shown while an alert is active: it must not clear a live one.
+    await call("/api/demo/cyclone", { on: false });
+    expect(await cyclone()).toMatchObject({ active: true, event: { name: "Tropical Cyclone LIVE-26" } });
+    const { bookingId } = (await (await call("/api/traveller/bookings", { tourId: "tour_lemorne" })).json()) as { bookingId: string };
+    await call(`/api/traveller/bookings/${bookingId}/approve`, { paymentHash: "ef".repeat(32) });
+    const run = (await (await call("/api/agent/run", { bookingId })).json()) as { outcome: string };
+    expect(run.outcome).toBe("cyclone_alert_not_locking"); // nothing is locked while the live alert stands
+    expect(ledger.balance("traveller")).toBe(10_000);
+    // The replay is added next to the live alert, then removed again, and the live alert stays.
+    await call("/api/demo/cyclone", { on: true });
+    await call("/api/demo/cyclone", { on: false });
+    expect(await cyclone()).toMatchObject({ active: true, event: { name: "Tropical Cyclone LIVE-26" } });
   });
 
   it("releaseHolds (on stop) cancels a locked hold and an open hold invoice at the guide's wallet", async () => {

@@ -38,7 +38,7 @@ You can also type a request for the agent, in English or French: *"book the lago
 ## Test it
 
 ```bash
-npm run check        # typecheck + 206 unit/property/API tests + the 6 end-to-end scenarios; offline, no keys
+npm run check        # typecheck + 207 unit/property/API tests + the 6 end-to-end scenarios; offline, no keys
 npm test             # unit, property and API tests only (Vitest)
 npm run e2e:sim      # the six demo scenarios (settle, cyclone refund, refusals, plan B, re-approval, hold limit), as a report
 npm run test:e2e     # Playwright: 5 flows at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once
@@ -162,7 +162,7 @@ Each one refuses to start without those values, and `e2e:nwc-app` also refuses w
 - The clock is real, and the block height is the one the guide's wallet reports. The tours start about 30 minutes after the server starts, inside the 50 min lock window; restart the server for fresh tour times.
 - Every screen says which backend runs: "NWC Faucet test wallets: dummy balances, no real sats", with the network and the block height. That text is fixed: the app cannot tell test wallets from real ones, so `.env` must only ever hold test wallets.
 - The API refuses, and the PWA hides, every control that fakes time or the chain (skip ahead, let an invoice expire), and reset.
-- The cyclone alert stays as the SYNTHETIC REPLAY of BELAL-24, so a refund can be shown. **Push the agent to overspend** forges its invoices locally (signed by a throwaway key), and they are refused before any wallet call.
+- The cyclone alert stays as the SYNTHETIC REPLAY of BELAL-24, so a refund can be shown. The control adds or removes only that replay: it never clears a live GDACS alert (`GDACS_LIVE=1`). **Push the agent to overspend** forges its invoices locally (signed by a throwaway key), and they are refused before any wallet call.
 - On Ctrl+C the server first cancels any hold it still has open at the guide's wallet.
 
 `e2e:nwc`, `demo:nwc` (in the video takes) and `e2e:nwc-app` ran over NWC against Alby's NWC Faucet test wallets on 16 Nov 2026. The refusal of the time controls is tested offline (`tests/server/nwc-mode.test.ts`). Their balances are dummy sats that exist only inside one Alby Hub; the network is reported as `mainnet`, so the invoices start with `lnbc`.

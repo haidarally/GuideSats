@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchLive, loadFixture, replayShifted, GDACS_LIVE_URL } from "../../src/feeds/gdacs";
+import { fetchLive, isSyntheticReplay, loadFixture, replayShifted, GDACS_LIVE_URL } from "../../src/feeds/gdacs";
 import { cycloneVerdict, parseGdacsDate } from "../../src/domain/cyclone";
 
 const fakeFetch = (status: number, body: unknown) =>
@@ -20,6 +20,8 @@ describe("GDACS feed sources", () => {
     expect(parseGdacsDate(r.fromdate)).toBe(at);
     expect(parseGdacsDate(r.todate) - parseGdacsDate(r.fromdate)).toBe(parseGdacsDate(o.todate) - parseGdacsDate(o.fromdate));
     expect(r.name).toContain("SYNTHETIC REPLAY");
+    expect(isSyntheticReplay(replayShifted(f, at).features[0]!)).toBe(true);
+    expect(isSyntheticReplay(f.features[0]!)).toBe(false); // the recorded (or a live) event is never marked
     expect(cycloneVerdict(replayShifted(f, at), { now: at + 3_600_000, tourStart: at + 86_400_000, tourEnd: at + 90_000_000 }).cancel).toBe(true);
   });
   it("fetchLive: 204 means no events", async () => {

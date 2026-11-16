@@ -17,7 +17,7 @@ import { cycloneVerdict } from "../domain/cyclone";
 import { ServiceError } from "../app/service";
 import { MandateError } from "../domain/mandate";
 import { TransitionError } from "../domain/booking";
-import { loadFixture, replayShifted } from "../feeds/gdacs";
+import { isSyntheticReplay, loadFixture, replayShifted } from "../feeds/gdacs";
 import { redact, type Logger } from "../log/redact";
 import type { BookingService } from "../app/service";
 import type { Budget, TxRecord } from "../ln/backend";
@@ -278,13 +278,18 @@ export function createApp(ctx: ServerContext) {
   const fakesTime = (c: Context) => (demoControls(ctx.world()).advance ? null : c.json({ error: "this demo control fakes time: SIMULATED backend only" }, 403));
 
   // On both backends: a SYNTHETIC REPLAY of the recorded BELAL-24 GDACS event, moved to now. Its name carries
-  // "(SYNTHETIC REPLAY)" on every screen, so it is never mistaken for a live alert.
+  // "(SYNTHETIC REPLAY)" on every screen, so it is never mistaken for a live alert. The control adds or
+  // removes only its own replay: every other event in the feed (a live GDACS read with GDACS_LIVE=1) stays,
+  // so a demo control can never clear or hide a real alert.
   app.post("/api/demo/cyclone", async (c) => {
     const b = await json(c);
     const svc = ctx.world().svc;
     const on = b.on === true;
-    const replay = replayShifted(loadFixture("tc-2024-01-belal.json"), svc.now() - 6 * 3_600_000);
-    svc.setFeed(on ? () => replay : () => ({ type: "FeatureCollection", features: [] }));
+    const current = svc.currentFeed();
+    const kept = current.features.filter((f) => !isSyntheticReplay(f));
+    const replay = on ? replayShifted(loadFixture("tc-2024-01-belal.json"), svc.now() - 6 * 3_600_000).features : [];
+    const next = { ...current, features: [...kept, ...replay] };
+    svc.setFeed(() => next);
     const r = await svc.applyCycloneRule();
     broadcast("update", { type: "cyclone" });
     return c.json({ ok: true, active: on, affected: r.verdicts.map((v) => v.bookingId) });

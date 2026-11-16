@@ -46,7 +46,7 @@ L'agent ne paie que la facture que l'appli a elle-même demandée au portefeuill
 ## Tester
 
 ```bash
-npm run check        # typecheck + 206 tests (unitaires, propriété, API) + les 6 scénarios de bout en bout ; hors ligne, sans clé
+npm run check        # typecheck + 207 tests (unitaires, propriété, API) + les 6 scénarios de bout en bout ; hors ligne, sans clé
 npm run e2e:sim      # les six scénarios de démo, sous forme de rapport
 npm run test:e2e     # Playwright à 360 px (EN) et 412 px (FR) ; une fois avant : npx playwright install chromium
 ```
@@ -181,7 +181,7 @@ Chacune refuse de démarrer sans ces valeurs. `e2e:nwc-app` refuse aussi quand s
 - L'heure est réelle, et la hauteur de bloc est celle que donne le portefeuille du guide. Les excursions commencent environ 30 minutes après le démarrage du serveur, dans la fenêtre de blocage de 50 min ; relancez le serveur pour de nouveaux horaires.
 - Chaque écran dit quel backend tourne : « Portefeuilles de test NWC Faucet : soldes fictifs, aucun vrai sat », avec le réseau et la hauteur de bloc. Ce texte est fixe : l'appli ne sait pas distinguer des portefeuilles de test de vrais portefeuilles, donc `.env` ne doit contenir que des portefeuilles de test.
 - L'API refuse, et la PWA cache, toute commande qui truque le temps ou la chaîne (avancer, laisser expirer une facture), ainsi que la réinitialisation.
-- L'alerte cyclone reste disponible comme REJEU SYNTHÉTIQUE de BELAL-24, pour montrer un remboursement. **Pousser l'agent à trop dépenser** forge ses factures sur place (signées par une clé jetable), et elles sont refusées avant tout appel au portefeuille.
+- L'alerte cyclone reste disponible comme REJEU SYNTHÉTIQUE de BELAL-24, pour montrer un remboursement. La commande n'ajoute ou ne retire que ce rejeu : elle n'efface jamais une vraie alerte GDACS lue en direct (`GDACS_LIVE=1`). **Pousser l'agent à trop dépenser** forge ses factures sur place (signées par une clé jetable), et elles sont refusées avant tout appel au portefeuille.
 - Sur Ctrl+C, le serveur annule d'abord tout « hold » qu'il a encore d'ouvert chez le portefeuille du guide.
 
 `e2e:nwc`, `demo:nwc` (lors des prises de la vidéo) et `e2e:nwc-app` ont été lancés sur NWC contre les portefeuilles de test NWC Faucet d'Alby le 16 nov. 2026. Le refus des commandes de temps est testé hors ligne (`tests/server/nwc-mode.test.ts`). Leurs soldes sont des sats fictifs qui n'existent qu'à l'intérieur d'un seul Alby Hub ; le réseau annoncé est `mainnet`, donc les factures commencent par `lnbc`.
