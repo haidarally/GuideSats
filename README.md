@@ -38,7 +38,7 @@ You can also type a request for the agent, in English or French: *"book the lago
 ## Test it
 
 ```bash
-npm run check        # typecheck + 189 unit/property/API tests + the 6 end-to-end scenarios; offline, no keys
+npm run check        # typecheck + 190 unit/property/API tests + the 6 end-to-end scenarios; offline, no keys
 npm test             # unit, property and API tests only (Vitest)
 npm run e2e:sim      # the six demo scenarios (settle, cyclone refund, refusals, plan B, re-approval, hold limit), as a report
 npm run test:e2e     # Playwright: 5 flows at 360 px (EN) and 412 px (FR); needs `npx playwright install chromium` once
@@ -94,7 +94,7 @@ flowchart LR
 - **Reconcile step** (`src/app/reconcile.ts`): a payment without a clear answer is resolved from the guide's wallet (`lookup_invoice`), never from error text.
 - **Agent** (`src/agent/`): a rule-based planner, so no LLM key is needed. An LLM planner could use the same tools and get nothing more.
 
-Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.md](SECURITY.md). Event rules checklist: [docs/RULES.md](docs/RULES.md).
+Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [SECURITY.md](SECURITY.md).
 
 ## Security by design (short)
 
