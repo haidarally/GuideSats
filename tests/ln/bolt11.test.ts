@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { decode } from "light-bolt11-decoder";
-import { encodeSimInvoice, recoverPayee, wordsToBytesPadded } from "../../src/ln/bolt11";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import { encodeSignedInvoice, encodeSimInvoice, recoverPayee, wordsToBytesPadded } from "../../src/ln/bolt11";
+import { checkInvoice } from "../../src/ln/invoiceCheck";
 
 const spec2 = readFileSync(new URL("../../fixtures/bolt11/spec-example-2.txt", import.meta.url), "utf8").trim();
 const SPEC_PAYEE = "03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad";
@@ -29,6 +32,17 @@ describe("bolt11 helpers", () => {
     expect(get("description")).toBe("Le Morne hike");
     expect(get("expiry")).toBe(43_200); // relative seconds (the `x` tag)
     expect(recoverPayee(inv)).toBeNull(); // zero signature: nobody signed it
+  });
+  it("signs an invoice with a throwaway key: the payee recovered from the signature is that key", () => {
+    const sk = secp256k1.utils.randomSecretKey();
+    const pub = bytesToHex(secp256k1.getPublicKey(sk, true));
+    const p = { network: "mainnet" as const, amountSats: 210, paymentHash: "cd".repeat(32), description: "forged", timestamp: 1_763_236_800, expirySecs: 600 };
+    const inv = encodeSignedInvoice(p, sk);
+    expect(inv.startsWith("lnbc2100n1")).toBe(true);
+    expect(recoverPayee(inv)).toBe(pub);
+    const exp = { network: "mainnet" as const, amountSats: 210, paymentHash: "cd".repeat(32), now: 1_763_236_800_000, payeeProof: "signature" as const };
+    expect(checkInvoice(inv, { ...exp, payeePubkey: pub })).toMatchObject({ ok: true });
+    expect(checkInvoice(inv, { ...exp, payeePubkey: SPEC_PAYEE })).toEqual({ ok: false, reason: "wrong_payee" });
   });
   it("refuses bad simulator inputs", () => {
     const ok = { network: "regtest" as const, amountSats: 1, paymentHash: "ab".repeat(32), description: "", timestamp: 1, expirySecs: 60, payeeNodeId: "02" + "11".repeat(32) };

@@ -1,6 +1,7 @@
 // BOLT11 helpers that light-bolt11-decoder does not provide:
 //  1. payee recovery from the invoice signature (real invoices), using @noble/curves;
-//  2. an encoder for SIMULATED invoices (regtest prefix, zero signature, explicit `n` tag).
+//  2. an encoder for SIMULATED invoices (regtest prefix, zero signature, explicit `n` tag);
+//  3. an encoder signed with a throwaway key, for the forged invoices of the demo's overspend push.
 // The simulator never holds a private key: its invoices carry no valid signature,
 // so they can never be paid by a real Lightning wallet.
 import { bech32 } from "@scure/base";
@@ -104,21 +105,49 @@ export interface SimInvoiceParams {
   payeeNodeId: string; // 33-byte hex identifier (simulated, no private key exists)
 }
 
-/** Encode a SIMULATED BOLT11 invoice: valid structure, zero signature, explicit payee (`n`) tag. */
-export function encodeSimInvoice(p: SimInvoiceParams): string {
+/** The human-readable part and the data words (timestamp, p, d, x tags) of an invoice, before any `n` tag or signature. */
+function invoiceParts(p: Omit<SimInvoiceParams, "payeeNodeId">): { hrp: string; words: number[] } {
   if (!Number.isSafeInteger(p.amountSats) || p.amountSats <= 0) throw new Error("amountSats must be a positive integer");
   if (!/^[0-9a-f]{64}$/.test(p.paymentHash)) throw new Error("paymentHash must be 32-byte hex");
-  if (!/^0[23][0-9a-f]{64}$/.test(p.payeeNodeId)) throw new Error("payeeNodeId must be 33-byte compressed hex");
-  // 1 sat = 10 nano-BTC, so "<sats*10>n" is exact.
-  const hrp = `ln${NETWORK_PREFIX[p.network]}${p.amountSats * 10}n`;
   const enc = new TextEncoder();
-  const words: number[] = [
-    ...intToWords(p.timestamp, 7),
-    ...tag(1, bytesToWords(hexToBytes(p.paymentHash))), // p
-    ...tag(13, bytesToWords(enc.encode(p.description))), // d
-    ...tag(6, minimalIntWords(p.expirySecs)), // x
+  return {
+    // 1 sat = 10 nano-BTC, so "<sats*10>n" is exact.
+    hrp: `ln${NETWORK_PREFIX[p.network]}${p.amountSats * 10}n`,
+    words: [
+      ...intToWords(p.timestamp, 7),
+      ...tag(1, bytesToWords(hexToBytes(p.paymentHash))), // p
+      ...tag(13, bytesToWords(enc.encode(p.description))), // d
+      ...tag(6, minimalIntWords(p.expirySecs)), // x
+    ],
+  };
+}
+
+/** Encode a SIMULATED BOLT11 invoice: valid structure, zero signature, explicit payee (`n`) tag. */
+export function encodeSimInvoice(p: SimInvoiceParams): string {
+  if (!/^0[23][0-9a-f]{64}$/.test(p.payeeNodeId)) throw new Error("payeeNodeId must be 33-byte compressed hex");
+  const { hrp, words } = invoiceParts(p);
+  words.push(
     ...tag(19, bytesToWords(hexToBytes(p.payeeNodeId))), // n
     ...new Array<number>(SIG_WORDS).fill(0), // zero signature: SIMULATED, unpayable on a real network
-  ];
+  );
   return bech32.encode(hrp, words, Number.MAX_SAFE_INTEGER);
+}
+
+/**
+ * Encode a BOLT11 invoice signed with `secretKey`, so its payee (recovered from the signature) is that key.
+ * Used only to forge the invoices of the demo's overspend push on a real backend (a key that is not the
+ * guide's) and in the tests. No node stands behind such a throwaway key: nobody could ever be paid with it.
+ */
+export function encodeSignedInvoice(p: Omit<SimInvoiceParams, "payeeNodeId">, secretKey: Uint8Array): string {
+  const { hrp, words } = invoiceParts(p);
+  const hrpBytes = new TextEncoder().encode(hrp);
+  const data = wordsToBytesPadded(words);
+  const msg = new Uint8Array(hrpBytes.length + data.length);
+  msg.set(hrpBytes, 0);
+  msg.set(data, hrpBytes.length);
+  const rec = secp256k1.sign(sha256(msg), secretKey, { prehash: false, format: "recovered" }); // [recovery, r, s]
+  const sig = new Uint8Array(65);
+  sig.set(rec.slice(1), 0);
+  sig[64] = rec[0]!;
+  return bech32.encode(hrp, [...words, ...bytesToWords(sig)], Number.MAX_SAFE_INTEGER);
 }
