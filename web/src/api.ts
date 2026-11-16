@@ -2,16 +2,17 @@
 // only H = SHA-256(P) is ever sent to the server before the meeting.
 export interface Tx { at: number; direction: "in" | "out"; amountSats: number; paymentHash: string; state: string; description: string }
 export interface Tour { id: string; guideId: string; title: { en: string; fr: string }; meetingPoint: { en: string; fr: string }; priceSats: number; startAt: number; durationHours: number }
-export interface Guide { id: string; displayName: string; area: string; languages: string[]; payeePubkey: string; balanceSats: number; transactions: Tx[] }
+export interface Guide { id: string; displayName: string; area: string; languages: string[]; payeePubkey: string; balanceSats: number | null; transactions: Tx[] }
 export interface Booking {
   id: string; tourId: string; guideId: string; priceSats: number; tourStart: number; tourEnd: number; state: string; paymentHash: string | null; invoice: string | null;
   mode: "hold" | "on_completion"; confirmedAt?: number | null;
   mandate: { status: string; capSats: number; payeePubkey: string; notBefore: number; notAfter: number } | null;
 }
 export interface State {
-  simulated: boolean; backend: string; network: string; now: number;
+  simulated: boolean; backend: string; network: string; blockHeight: number | null; now: number;
+  controls: { cyclone: boolean; attack: boolean; expireInvoice: boolean; advance: boolean; reset: boolean };
   cyclone: { active: boolean; event?: { name: string; alertlevel: string }; source: string };
-  traveller: { id: string; balanceSats: number; budget: { totalSats: number; usedSats: number; renewal: string } | null; transactions: Tx[] };
+  traveller: { id: string; balanceSats: number | null; budget: { totalSats: number; usedSats: number; renewal: string } | null; transactions: Tx[] };
   guides: Guide[]; tours: Tour[]; bookings: Booking[];
 }
 
@@ -53,7 +54,8 @@ export function readSecret(bookingId: string): string | null {
   }
 }
 
-export const fmtSats = (n: number) => n.toLocaleString("en-US").replace(/,/g, " ");
+/** A wallet read that failed comes as null: shown as "…" until the next read. */
+export const fmtSats = (n: number | null) => (n === null ? "…" : n.toLocaleString("en-US").replace(/,/g, " "));
 export const short = (s: string, n = 8) => (s.length > 2 * n ? `${s.slice(0, n)}…${s.slice(-n)}` : s);
 export const fmtTime = (ms: number, lang: string) =>
   new Date(ms).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { timeZone: "Indian/Mauritius", weekday: "short", hour: "2-digit", minute: "2-digit" });

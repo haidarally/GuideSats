@@ -1,12 +1,15 @@
 // HTTP API (Hono) + Server-Sent Events. Local demo only: the server binds to 127.0.0.1.
 // Doors: /api/traveller/* (approve), /api/guide/* (settle), /api/agent/* (run the agent),
-// /api/demo/* (simulator controls, SIMULATED backend only).
+// /api/demo/* (demo controls). On both backends: the cyclone alert as a SYNTHETIC REPLAY of a recorded
+// GDACS event, and the overspend push (forged invoices, refused before any wallet is called). On the
+// SIMULATED backend only: the controls that fake time or the chain (skip ahead, let an invoice expire) and reset.
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { agentFacade, runTool, type ToolCall } from "../agent/tools";
-import { encodeSimInvoice } from "../ln/bolt11";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { encodeSignedInvoice, encodeSimInvoice } from "../ln/bolt11";
 import { invoiceExpiresAt } from "../ln/invoiceCheck";
 import { simNodeId } from "../ln/sim";
 import { runAgent, type Goal } from "../agent/planner";
@@ -59,33 +62,50 @@ function cycloneSource(feed: { features: unknown[] }, event: { name: string } | 
   return feed.features.length ? "GDACS: no Orange or Red cyclone alert for Mauritius" : "GDACS: no active alert";
 }
 
-/** Everything the PWA shows. Wallet data is read through the Lightning interface, so it is the same for SIM and NWC. */
+/** Which demo controls this world allows. Controls that fake time exist only on the simulator, which has a clock control. */
+export function demoControls(w: AppWorld) {
+  const fakesTime = w.svc.backend.simulated && Boolean(w.advance);
+  return { cyclone: true, attack: true, expireInvoice: fakesTime, advance: fakesTime, reset: w.svc.backend.simulated };
+}
+
+/** A wallet read that fails shows as null (the PWA shows "…") instead of failing the whole screen. */
+const orNull = <T>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
+
+/**
+ * Everything the PWA shows. Wallet data is read through the Lightning interface, so it is the same for SIM and
+ * NWC. The wallet reads run in parallel (over NWC each one is a round trip to the wallet).
+ */
 export async function snapshot(w: AppWorld) {
   const { svc } = w;
-  const now = svc.now();
-  const feed = svc.currentFeed();
   const travellerId = svc.travellerWalletId;
   const payer = svc.backend.payer(travellerId);
-  const guides = await Promise.all(
-    svc.guides.map(async (g) => {
-      const r = svc.backend.receiver(g.id);
-      return { ...g, balanceSats: await r.getBalance(), transactions: newestFirst(await r.listTransactions()) };
-    }),
-  );
+  const firstGuide = svc.guides[0];
+  const [balanceSats, budget, transactions, guides, blockHeight] = await Promise.all([
+    orNull(payer.getBalance()),
+    orNull(payer.getBudget()),
+    payer.listTransactions().then(newestFirst, () => []),
+    Promise.all(
+      svc.guides.map(async (g) => {
+        const r = svc.backend.receiver(g.id);
+        const [bal, txs] = await Promise.all([orNull(r.getBalance()), r.listTransactions().then(newestFirst, () => [])]);
+        return { ...g, balanceSats: bal, transactions: txs };
+      }),
+    ),
+    firstGuide ? svc.backend.receiver(firstGuide.id).getInfo().then((i) => i.blockHeight ?? null, () => null) : Promise.resolve(null),
+  ]);
+  const now = svc.now();
+  const feed = svc.currentFeed();
   const anyTour = svc.tours[0];
   const verdict = anyTour ? cycloneVerdict(feed, { now, tourStart: now, tourEnd: now + 48 * 3_600_000 }) : { cancel: false };
   return {
     simulated: svc.backend.simulated,
     backend: svc.backend.kind,
     network: svc.backend.network,
+    blockHeight,
+    controls: demoControls(w),
     now,
     cyclone: { active: verdict.cancel, event: "event" in verdict ? verdict.event : undefined, source: cycloneSource(feed, "event" in verdict ? verdict.event : undefined) },
-    traveller: {
-      id: travellerId,
-      balanceSats: await payer.getBalance(),
-      budget: await payer.getBudget(),
-      transactions: newestFirst(await payer.listTransactions()),
-    },
+    traveller: { id: travellerId, balanceSats, budget, transactions },
     guides,
     tours: svc.tours,
     bookings: svc.bookings().map((b) => {
@@ -130,7 +150,34 @@ export function createApp(ctx: ServerContext) {
     return c.json({ error: "internal_error" }, 500); // never echo internals
   });
 
-  app.get("/api/state", async (c) => c.json(await snapshot(ctx.world())));
+  // One state read at a time: the PWA asks again on every live event, and over NWC a read is several wallet
+  // calls. A request that comes during a read waits for the next one, so it never gets data older than itself.
+  type Snapshot = Awaited<ReturnType<typeof snapshot>>;
+  let running: Promise<Snapshot> | null = null;
+  let queued: Promise<Snapshot> | null = null;
+  const freshSnapshot = (): Promise<Snapshot> => {
+    if (!running) {
+      const p: Promise<Snapshot> = snapshot(ctx.world()).finally(() => {
+        if (running === p) running = null;
+      });
+      running = p;
+      return p;
+    }
+    if (!queued) {
+      queued = running
+        .then(
+          () => undefined,
+          () => undefined,
+        )
+        .then(() => {
+          queued = null;
+          return freshSnapshot();
+        });
+    }
+    return queued;
+  };
+
+  app.get("/api/state", async (c) => c.json(await freshSnapshot()));
 
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {
@@ -207,12 +254,13 @@ export function createApp(ctx: ServerContext) {
     return c.json(redact({ outcome: r.outcome, steps: r.steps }));
   });
 
-  // ---------- demo controls (SIMULATED only) ----------
-  const simOnly = (c: Context) => (ctx.world().svc.backend.simulated ? null : c.json({ error: "demo controls exist only on the SIMULATED backend" }, 403));
+  // ---------- demo controls ----------
+  const simOnly = (c: Context) => (ctx.world().svc.backend.simulated ? null : c.json({ error: "this demo control exists only on the SIMULATED backend" }, 403));
+  const fakesTime = (c: Context) => (demoControls(ctx.world()).advance ? null : c.json({ error: "this demo control fakes time: SIMULATED backend only" }, 403));
 
+  // On both backends: a SYNTHETIC REPLAY of the recorded BELAL-24 GDACS event, moved to now. Its name carries
+  // "(SYNTHETIC REPLAY)" on every screen, so it is never mistaken for a live alert.
   app.post("/api/demo/cyclone", async (c) => {
-    const no = simOnly(c);
-    if (no) return no;
     const b = await json(c);
     const svc = ctx.world().svc;
     const on = b.on === true;
@@ -224,19 +272,29 @@ export function createApp(ctx: ServerContext) {
   });
 
   // Shows the mandate at work: the agent is pushed to overspend, pay someone else, or approve itself.
+  // The forged invoices are refused by the checks before any wallet is called, on both backends. On the
+  // simulator they name another seed guide; on a real backend they are signed by a throwaway key that is
+  // not the guide's (no node stands behind it, so nobody could be paid with it).
   app.post("/api/demo/attack", async (c) => {
-    const no = simOnly(c);
-    if (no) return no;
     const svc = ctx.world().svc;
     const target = [...svc.bookings()].reverse().find((b) => b.mode === "hold" && b.state === "mandated" && b.paymentHash);
     if (!target) return c.json({ error: "approve_a_booking_first" }, 409);
     const ts = Math.floor(svc.now() / 1000);
-    const other = svc.guides.find((g) => g.id !== target.guideId)!;
-    const forge = (amountSats: number, payee: string) =>
-      encodeSimInvoice({ network: "regtest", amountSats, paymentHash: target.paymentHash!, description: "attack", timestamp: ts, expirySecs: 600, payeeNodeId: payee });
+    const base = { network: svc.backend.network, paymentHash: target.paymentHash!, description: "attack", timestamp: ts, expirySecs: 600 };
+    let overCap: string;
+    let otherPayee: string;
+    if (svc.backend.simulated) {
+      const other = svc.guides.find((g) => g.id !== target.guideId)?.id ?? "someone_else";
+      overCap = encodeSimInvoice({ ...base, amountSats: target.priceSats * 3, payeeNodeId: simNodeId(target.guideId) });
+      otherPayee = encodeSimInvoice({ ...base, amountSats: target.priceSats, payeeNodeId: simNodeId(other) });
+    } else {
+      const stranger = secp256k1.utils.randomSecretKey();
+      overCap = encodeSignedInvoice({ ...base, amountSats: target.priceSats * 3 }, stranger);
+      otherPayee = encodeSignedInvoice({ ...base, amountSats: target.priceSats }, stranger);
+    }
     const calls: ToolCall[] = [
-      { tool: "pay_invoice", args: { bookingId: target.id, invoice: forge(target.priceSats * 3, simNodeId(target.guideId)) } },
-      { tool: "pay_invoice", args: { bookingId: target.id, invoice: forge(target.priceSats, simNodeId(other.id)) } },
+      { tool: "pay_invoice", args: { bookingId: target.id, invoice: overCap } },
+      { tool: "pay_invoice", args: { bookingId: target.id, invoice: otherPayee } },
       { tool: "approve_mandate" as ToolCall["tool"], args: { bookingId: target.id } },
       { tool: "raise_cap" as ToolCall["tool"], args: { bookingId: target.id, capSats: 1_000_000 } },
     ];
@@ -255,7 +313,7 @@ export function createApp(ctx: ServerContext) {
   // Shows the re-approval flow: the agent asks for the hold invoice but does not pay it, and the clock
   // skips past its expiry. The watcher's reconcile step then retires H; the traveller approves again.
   app.post("/api/demo/expire-invoice", async (c) => {
-    const no = simOnly(c);
+    const no = fakesTime(c);
     if (no) return no;
     const w = ctx.world();
     if (!w.advance) return c.json({ error: "no clock control on this backend" }, 403);
@@ -276,7 +334,7 @@ export function createApp(ctx: ServerContext) {
   });
 
   app.post("/api/demo/advance", async (c) => {
-    const no = simOnly(c);
+    const no = fakesTime(c);
     if (no) return no;
     const b = await json(c);
     const hours = typeof b.hours === "number" && b.hours > 0 && b.hours <= 48 ? b.hours : null;

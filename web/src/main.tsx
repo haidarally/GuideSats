@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useCallback, useEffect, useState } from "preact/hooks";
-import { getState, type State } from "./api";
+import { fmtSats, getState, type State } from "./api";
 import { STRINGS, type Lang } from "./i18n";
 import { Traveller } from "./Traveller";
 import { Guide } from "./Guide";
@@ -70,7 +70,14 @@ function App() {
           {lang === "en" ? "FR" : "EN"}
         </button>
       </header>
-      {s.simulated && <div class="banner sim" data-testid="sim-banner">{t.simulated}</div>}
+      {s.simulated ? (
+        <div class="banner sim" data-testid="sim-banner">{t.simulated}</div>
+      ) : (
+        <div class="banner nwc" data-testid="nwc-banner">
+          {t.nwcFaucet}
+          <div class="small">Nostr Wallet Connect · {s.network}{s.blockHeight ? ` · ${t.block} ${fmtSats(s.blockHeight)}` : ""}</div>
+        </div>
+      )}
       <div class={`banner ${s.cyclone.active ? "storm" : "calm"}`} data-testid="cyclone-banner">
         {s.cyclone.active ? `🌀 ${t.cycloneActive}: ${s.cyclone.event?.name} (${s.cyclone.event?.alertlevel})` : t.cycloneNone}
       </div>

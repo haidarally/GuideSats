@@ -3,6 +3,8 @@ export type Lang = "en" | "fr";
 
 const en = {
   simulated: "SIMULATED Lightning: no real sats move",
+  nwcFaucet: "NWC Faucet test wallets: dummy balances, no real sats",
+  block: "block",
   tabTraveller: "Traveller wallet",
   tabGuide: "Guide",
   tabAgent: "Agent",
@@ -40,7 +42,8 @@ const en = {
   agentLog: "Agent console (live)",
   agentRules: "The agent can search, propose and pay within an approved mandate. It cannot approve or raise a mandate, and it never sees your secret code.",
   demo: "Demo controls (simulator only)",
-  cycloneOn: "Trigger GDACS cyclone alert (replay of BELAL-24)",
+  demoNwc: "Demo controls (no clock or chain control over NWC)",
+  cycloneOn: "Trigger GDACS cyclone alert (SYNTHETIC REPLAY of BELAL-24)",
   cycloneOff: "Clear cyclone alert",
   skip: "Skip ahead 13 h",
   reset: "Reset demo",
@@ -81,6 +84,8 @@ const en = {
 
 const fr: typeof en = {
   simulated: "Lightning SIMULÉ : aucun vrai sat ne bouge",
+  nwcFaucet: "Portefeuilles de test NWC Faucet : soldes fictifs, aucun vrai sat",
+  block: "bloc",
   tabTraveller: "Portefeuille voyageur",
   tabGuide: "Guide",
   tabAgent: "Agent",
@@ -118,7 +123,8 @@ const fr: typeof en = {
   agentLog: "Console de l'agent (en direct)",
   agentRules: "L'agent peut chercher, proposer et payer dans un mandat approuvé. Il ne peut ni approuver ni augmenter un mandat, et ne voit jamais votre code secret.",
   demo: "Commandes de démo (simulateur uniquement)",
-  cycloneOn: "Déclencher une alerte cyclone GDACS (rejeu de BELAL-24)",
+  demoNwc: "Commandes de démo (aucune commande d'horloge ni de chaîne sur NWC)",
+  cycloneOn: "Déclencher une alerte cyclone GDACS (REJEU SYNTHÉTIQUE de BELAL-24)",
   cycloneOff: "Lever l'alerte cyclone",
   skip: "Avancer de 13 h",
   reset: "Réinitialiser la démo",

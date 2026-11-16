@@ -8,6 +8,7 @@ interface Props { s: State; t: Strings; log: LogLine[]; onError: (e: unknown) =>
 
 export function Agent({ s, t, log, onError, refresh }: Props) {
   const [text, setText] = useState("");
+  const c = s.controls;
   const [busy, setBusy] = useState(false);
   const run = (body: unknown) => {
     setBusy(true);
@@ -32,17 +33,19 @@ export function Agent({ s, t, log, onError, refresh }: Props) {
         {log.length === 0 ? <li class="muted">…</li> : log.map((l, i) => <li key={i} class={l.ok === false ? "bad" : l.ok ? "good" : ""}>{l.text}</li>)}
       </ol>
 
-      {s.simulated && (
+      {(c.cyclone || c.attack) && (
         <div class="card demo">
-          <div class="label">{t.demo}</div>
+          <div class="label">{s.simulated ? t.demo : t.demoNwc}</div>
           <div class="actions wrap">
-            <button class="warn" data-testid="cyclone" onClick={() => post("/api/demo/cyclone", { on: !s.cyclone.active }).then(refresh, onError)}>
-              {s.cyclone.active ? t.cycloneOff : t.cycloneOn}
-            </button>
-            <button class="ghost" data-testid="attack" onClick={() => post("/api/demo/attack").then(refresh, onError)}>{t.attack}</button>
-            <button class="ghost" data-testid="expire-invoice" onClick={() => post("/api/demo/expire-invoice").then(refresh, onError)}>{t.expireInvoice}</button>
-            <button class="ghost" onClick={() => post("/api/demo/advance", { hours: 13 }).then(refresh, onError)}>{t.skip}</button>
-            <button class="ghost" onClick={() => post("/api/demo/reset").then(refresh, onError)}>{t.reset}</button>
+            {c.cyclone && (
+              <button class="warn" data-testid="cyclone" onClick={() => post("/api/demo/cyclone", { on: !s.cyclone.active }).then(refresh, onError)}>
+                {s.cyclone.active ? t.cycloneOff : t.cycloneOn}
+              </button>
+            )}
+            {c.attack && <button class="ghost" data-testid="attack" onClick={() => post("/api/demo/attack").then(refresh, onError)}>{t.attack}</button>}
+            {c.expireInvoice && <button class="ghost" data-testid="expire-invoice" onClick={() => post("/api/demo/expire-invoice").then(refresh, onError)}>{t.expireInvoice}</button>}
+            {c.advance && <button class="ghost" data-testid="skip" onClick={() => post("/api/demo/advance", { hours: 13 }).then(refresh, onError)}>{t.skip}</button>}
+            {c.reset && <button class="ghost" data-testid="reset" onClick={() => post("/api/demo/reset").then(refresh, onError)}>{t.reset}</button>}
           </div>
         </div>
       )}
