@@ -1,4 +1,4 @@
-// Review (adversarial pass): what happens when the cyclone watcher or the traveller acts
+// What happens when the cyclone watcher or the traveller acts
 // WHILE a payment is in flight (mandate "consuming", booking still "mandated")?
 // The property test awaits every call in turn, so it never interleaves them; these do.
 // Invariant checked in every case: the booking state and the ledger agree, and no

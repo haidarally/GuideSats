@@ -69,7 +69,7 @@ export function mapHoldState(t: NwcTx, now: number): HoldState {
   return t.expires_at * 1000 < now ? "expired" : "open";
 }
 
-/** The Tuesday gate: the guide's wallet must list the three hold methods. */
+/** The hold-method gate: the guide's wallet must list the three hold methods. */
 export function assertHoldSupport(info: { methods: string[] }): void {
   const missing = HOLD_METHODS.filter((m) => !info.methods.includes(m));
   if (missing.length > 0) throw new HoldsUnsupportedError(missing);
